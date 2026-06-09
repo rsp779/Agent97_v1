@@ -126,6 +126,39 @@ class DataStore:
             "offer_scores":self.customer_offer_db.get(customer_id,[])
         }
 
+    def get_customer_long_term_memory(self, customer_id:str) -> Dict[str,Any]:
+        """Build long-term memory context from stored profile and behavior data."""
+        profile = self.get_customer_profile(customer_id)
+        transactions = self.get_customer_transactions(customer_id)
+        credit_card_transactions = [
+            t for t in transactions
+            if t.get("transaction_type") == "Credit Card Transaction"
+        ]
+        category_totals = {}
+        for txn in transactions:
+            category = txn.get("categoryType") or "Unknown"
+            amount = abs(txn.get("amount") or 0)
+            category_totals[category] = category_totals.get(category, 0) + amount
+
+        preferred_category = None
+        if category_totals:
+            preferred_category = max(category_totals, key=category_totals.get)
+
+        return {
+            "demographics": {
+                "city": profile.get("DEMOGS_CITY"),
+                "state": profile.get("DEMOGS_STATE"),
+                "country": profile.get("DEMOGS_COUNTRY"),
+                "age": profile.get("DEMOGS_AGE_IN_YEARS"),
+                "gender": profile.get("DEMOGS_GENDER_TYPE"),
+                "occupation": profile.get("DEMOGS_OCCUPATION"),
+            },
+            "customer_description": profile.get("customer_description"),
+            "preferred_spending_category": preferred_category,
+            "credit_card_transaction_count": len(credit_card_transactions),
+            "total_transaction_count": len(transactions),
+        }
+
 
 DATASTORE=DataStore(
     profile_file="data/customer_profiles_db.json",

@@ -14,6 +14,8 @@ class LoanParameters(BaseModel):
     """Schema to safely extract variable entities from conversational text."""
     loan_amount: Optional[float] = Field(None, description="The target principal loan amount requested by the user.")
     max_acceptable_emi: Optional[float] = Field(None, description="The maximum monthly installment boundary specified by the user.")
+    requested_tenure_months: List[int] = Field(default_factory=list, description="The requested loan tenure in months extracted from the user's query.")
+    loan_type: Optional[str] = Field(None, description="The requested loan type, such as Personal Loan, Home Loan, Gold Loan, etc.")
 
 def supervisor_node(state: AgentState) -> Dict[str, Any]:
     """Analyzes the user's query intent, builds a deterministic execution map,
@@ -29,10 +31,18 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     system_routing_guide = """You are the Global Dependency Architect Matrix for IDFC FIRST Bank.
     Your job is to analyze incoming user queries and output a strict, linear pipeline execution path of specialized sub-agents.
 
+    YOUR FOUR SUPERVISOR JOBS:
+    1. If a query is vague, ambiguous, or missing key details, return an empty ordered_path and prompt for more information.
+    2. If a query is beyond the customer banking relationship domain, return an empty ordered_path and allow the system to reply that it is out of scope.
+    3. Route valid banking queries to the exact one or more appropriate sub-agents.
+    4. Do not perform specialist analysis yourself; only orchestrate the correct tool chain.
+
     AVAILABLE SPECIALIST SUB-AGENTS:
     - offers_specialist (Offers Specialist): Fetches campaign interest rates, credit caps, and profile-specific pre-approved ceilings.
     - transaction_specialist (Transaction Analyst): Crunches, filters, ranks, and aggregates multi-month financial transaction histories.
     - loan_product_calculator (Loan Calculator): Executes compound reducing balance amortization mathematics using real verified loan rates.
+    - home_loan_specialist (Home Loan Specialist): Handles Home Loan EMI, tenure, amount discussions, and total repayment calculations using Home Loan offer data.
+    - gold_loan_specialist (Gold Loan Specialist): Handles gold-collateral loan eligibility, current price valuation, and disbursement range calculation.
     - credit_card_specialist (Credit Card Specialist): Calculates retail merchant checkout instant discounts, cashback boundaries, and point rewards.
     - banking_specialist (Banking Core Specialist): Extracts raw ledger tracking metadata, balances, and owned account portfolio types.
 
@@ -46,6 +56,8 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     
     CLARIFICATION RULE: If the user's query is vague, ambiguous, or missing key details needed to choose the correct specialist, do not guess. Return an empty ordered_path list and ask a concise follow-up clarification question.
     
+    OUT-OF-DOMAIN RULE: If the user's query is outside any customer banking relationship domain, return an empty ordered_path list and do not route to any specialist.
+    
     CRITICAL ROUTING RULE - CREDIT CARD CENTRALIZATION:
     ALL credit card-related queries (offers, rewards, EMI conversions, balance transfers, loans, merchant EMI, cashback, discounts, etc.) MUST route ONLY to ['credit_card_specialist'].
     The credit_card_specialist is the unified handler for all credit card operations and will manage all variants as they are added to the catalog.
@@ -54,8 +66,9 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     ROUTING DECISION MATRIX:
     1. If query mentions credit card, card, cardholder, card bill, card transaction, EMI on card, balance transfer, loan on card, or any card-related financial product -> ['credit_card_specialist']
     2. If query is ONLY about past banking history/transactions and does NOT mention credit card benefits/offers -> ['transaction_specialist']
-    3. If query is about a Personal Loan (not card-related) -> ['loan_product_calculator', 'offers_specialist']
-    4. If query is about general account info (not transactions, not offers) -> ['banking_specialist']
+    3. If query is about a Home Loan -> ['home_loan_specialist']
+    4. If query is about a Personal Loan (not card-related) -> ['loan_product_calculator', 'offers_specialist']
+    5. If query is about general account info (not transactions, not offers) -> ['banking_specialist']
     
     Examples:
     - "What is the transaction on my Credit Card on Amazon?" -> ['credit_card_specialist'] (card-related)
@@ -65,6 +78,7 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     - "What merchant EMI options are available on my card?" -> ['credit_card_specialist'] (card offer)
     - "How much did I spend last month?" -> ['transaction_specialist'] (pure history, no card offer context)
     - "I need a personal loan for 5 lakhs" -> ['loan_product_calculator', 'offers_specialist'] (non-card loan)
+    - "I want a home loan of 50 lakhs for 20 years" -> ['home_loan_specialist'] (home loan)
     
     Do not depend on external code heuristics; use only your understanding of the user query and the specialist definitions above.
     """
@@ -82,8 +96,11 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
 
     # 2. Extract numeric entities matching input specifications
     extraction_prompt = """You are an accurate data extraction utility. Your sole job is to parse numeric values 
-    from a retail banking customer query. Convert text values like '4 lakh' or '4L' to raw floats (e.g., 400000.0). 
-    If a value is entirely missing from the query, leave its field as null. Do not invent or assume data."""
+    and loan type information from a retail banking customer query. Convert text values like '4 lakh' or '4L' to raw floats (e.g., 400000.0).
+    Extract requested tenure values and normalize them to months (e.g., '5 years' -> 60 months).
+    Extract the requested loan type if present (e.g., Personal Loan, Home Loan, Gold Loan).
+    If a value is entirely missing from the query, leave its field as null or an empty list.
+    Do not invent or assume data, and do not reuse any values from previous turns unless the current query explicitly repeats them."""
         
     try:
         structured_extractor = llm.with_structured_output(LoanParameters)
@@ -93,11 +110,13 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         ])
         loan_amount = extracted.loan_amount
         max_acceptable_emi = extracted.max_acceptable_emi
+        requested_tenure_months = extracted.requested_tenure_months
+        loan_type = extracted.loan_type
     except Exception:
-        loan_amount, max_acceptable_emi = None, None
+        loan_amount, max_acceptable_emi, requested_tenure_months, loan_type = None, None, [], None
 
     print(f" -> [Generated Path]: {' -> '.join(ordered_path)}")
-    print(f" -> [Extracted Entities]: Amount: {loan_amount}, Max EMI: {max_acceptable_emi}")
+    print(f" -> [Extracted Entities]: Amount: {loan_amount}, Max EMI: {max_acceptable_emi}, Tenure months: {requested_tenure_months}, Loan type: {loan_type}")
 
     # Maintain existing dict references
     updated_extracted = dict(state.get("extracted_data", {}))
@@ -105,7 +124,9 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         "ordered_path": ordered_path,
         "current_step_index": 0,
         "loan_amount": loan_amount,
-        "max_acceptable_emi": max_acceptable_emi
+        "max_acceptable_emi": max_acceptable_emi,
+        "requested_tenure_months": requested_tenure_months,
+        "loan_type": loan_type
     })
 
     return {"extracted_data": updated_extracted}

@@ -1,6 +1,9 @@
 import json
 import math
+import ssl
 from typing import Dict, Any, List, Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from data.mock_db import DATASTORE
@@ -11,7 +14,9 @@ from prompts import (
     PRODUCT_CALCULATOR_PROMPT, 
     BANKING_SPECIALIST_PROMPT, 
     TRANSACTION_SPECIALIST_PROMPT, 
-    CREDIT_CARD_SPECIALIST_PROMPT
+    CREDIT_CARD_SPECIALIST_PROMPT,
+    HOME_LOAN_SPECIALIST_PROMPT,
+    GOLD_LOAN_SPECIALIST_PROMPT,
 )
 
 # ---------------------------------------------------------------------------
@@ -39,6 +44,78 @@ def get_banking_context(customer_id: str) -> dict:
     }
 
 # ---------------------------------------------------------------------------
+# External Gold Price Fetch Helpers
+
+
+def fetch_current_gold_price() -> Dict[str, Any]:
+    headers = {"User-Agent": "Mozilla/5.0"}
+    endpoints = [
+        "https://data-asg.goldprice.org/dbXRates/USD",
+        "https://api.metals.live/v1/spot/gold",
+    ]
+    context = ssl.create_default_context()
+
+    for url in endpoints:
+        try:
+            request = Request(url, headers=headers)
+            with urlopen(request, timeout=10, context=context) as response:
+                payload = response.read().decode("utf-8")
+            data = json.loads(payload)
+        except (HTTPError, URLError, json.JSONDecodeError, ValueError) as exc:
+            print(f"   [GoldPrice] Failed to fetch from {url}: {exc}")
+            continue
+
+        if isinstance(data, dict):
+            items = data.get("items") or data.get("data")
+            if isinstance(items, list) and items:
+                item = items[0]
+                price = None
+                for key in ["xauPrice", "price", "last"]:
+                    if isinstance(item, dict) and key in item:
+                        price = item[key]
+                        break
+                if price is not None:
+                    return {
+                        "price_per_ounce": float(price),
+                        "currency": "USD",
+                        "source": url,
+                    }
+            if "price" in data:
+                return {
+                    "price_per_ounce": float(data["price"]),
+                    "currency": "USD",
+                    "source": url,
+                }
+        elif isinstance(data, list) and data:
+            first = data[0]
+            if isinstance(first, dict) and "price" in first:
+                return {
+                    "price_per_ounce": float(first["price"]),
+                    "currency": "USD",
+                    "source": url,
+                }
+
+    # Fallback: Use conservative gold price estimate (₹1.5L reference for typical pledges)
+    # Fallback price: $50/ounce ≈ ₹1,550/gram (conservative estimate)
+    print("   [GoldPrice] All endpoints failed. Using fallback price estimate.")
+    return {
+        "price_per_ounce": 50.0,
+        "currency": "USD",
+        "source": "fallback_conservative_estimate",
+        "is_fallback": True,
+    }
+
+
+def convert_gold_quantity_to_grams(grams: Optional[float], tolas: Optional[float], ounces: Optional[float]) -> float:
+    if grams is not None and grams > 0:
+        return grams
+    if tolas is not None and tolas > 0:
+        return tolas * 11.6638038
+    if ounces is not None and ounces > 0:
+        return ounces * 31.1034768
+    return 0.0
+
+# ---------------------------------------------------------------------------
 # Generic Worker Execution Core (Sub-Agents B, C, E, F)
 # ---------------------------------------------------------------------------
 def generic_worker_runner(state: AgentState, agent_id: str, agent_name: str, prompt_template: str, context_fetcher) -> Dict[str, Any]:
@@ -47,6 +124,10 @@ def generic_worker_runner(state: AgentState, agent_id: str, agent_name: str, pro
     ctx = context_fetcher(customer_id)
     
     ctx["previously_extracted_data"] = state.get("extracted_data", {})
+    ctx["customer_memory"] = {
+        "long_term": state.get("extracted_data", {}).get("long_term_memory"),
+        "short_term": state.get("extracted_data", {}).get("short_term_memory"),
+    }
 
     print(f"   [*] Invoking Sub-Agent [{agent_id}] ({agent_name})...")
     
@@ -84,6 +165,135 @@ def credit_card_specialist_node(state: AgentState) -> Dict[str, Any]:
     return generic_worker_runner(state, "E", "credit_card_specialist", CREDIT_CARD_SPECIALIST_PROMPT, get_offer_context)
 
 
+def home_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
+    return generic_worker_runner(state, "G", "home_loan_specialist", HOME_LOAN_SPECIALIST_PROMPT, get_offer_context)
+
+
+def gold_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
+    customer_id = state["customer_id"]
+    user_query = state["messages"][-1].content if state.get("messages") else ""
+    print(f"   [*] Invoking Sub-Agent [H] (gold_loan_specialist)...")
+
+    class GoldLoanRequest(BaseModel):
+        gold_quantity_grams: Optional[float] = Field(None, description="Gold quantity pledged in grams.")
+        gold_quantity_tolas: Optional[float] = Field(None, description="Gold quantity pledged in tolas.")
+        gold_quantity_ounces: Optional[float] = Field(None, description="Gold quantity pledged in ounces.")
+        requested_loan_amount: Optional[float] = Field(None, description="The requested gold loan amount.")
+        requested_tenure_months: List[int] = Field(default_factory=list, description="Requested loan tenure in months.")
+        max_acceptable_emi: Optional[float] = Field(None, description="The maximum EMI the customer can pay.")
+
+    extraction_prompt = """You are a precise extraction assistant for gold loan customer requests.
+Extract the following values from the customer query. Convert numeric words like 'lakh' or 'tola' to raw float values.
+If a value is missing, leave it null or an empty list.
+
+Fields:
+- gold_quantity_grams
+- gold_quantity_tolas
+- gold_quantity_ounces
+- requested_loan_amount
+- requested_tenure_months
+- max_acceptable_emi
+"""
+    try:
+        structured_extractor = llm.with_structured_output(GoldLoanRequest)
+        gold_request = structured_extractor.invoke([
+            SystemMessage(content=extraction_prompt),
+            HumanMessage(content=user_query)
+        ])
+    except Exception as exc:
+        print(f"   [GoldLoan] Extraction failed: {exc}")
+        gold_request = GoldLoanRequest()
+
+    quantity_in_grams = convert_gold_quantity_to_grams(
+        gold_request.gold_quantity_grams,
+        gold_request.gold_quantity_tolas,
+        gold_request.gold_quantity_ounces,
+    )
+
+    if quantity_in_grams <= 0:
+        response_content = "To calculate your gold loan, please tell me the quantity of gold you are pledging in grams, tolas, or ounces."
+    else:
+        try:
+            price_data = fetch_current_gold_price()
+            price_per_ounce = price_data["price_per_ounce"]
+            currency = price_data["currency"]
+            is_fallback_price = price_data.get("is_fallback", False)
+            price_per_gram = price_per_ounce / 31.1034768
+            total_gold_value = round(quantity_in_grams * price_per_gram, 2)
+            min_disbursement = round(total_gold_value * 0.8, 2)
+            max_disbursement = round(total_gold_value * 1.2, 2)
+
+            if gold_request.requested_loan_amount is not None:
+                requested_amount = gold_request.requested_loan_amount
+                if requested_amount < min_disbursement or requested_amount > max_disbursement:
+                    amount_message = (
+                        f"Your requested gold loan amount of {requested_amount:.2f} {currency} is outside the current eligible range. "
+                        f"Based on {quantity_in_grams:.2f} grams of gold at current price, the eligible loan range is {min_disbursement:.2f} to {max_disbursement:.2f} {currency}."
+                    )
+                else:
+                    amount_message = (
+                        f"Your requested amount of {requested_amount:.2f} {currency} falls within the eligible gold loan disbursement range of "
+                        f"{min_disbursement:.2f} to {max_disbursement:.2f} {currency}."
+                    )
+            else:
+                amount_message = (
+                    f"Based on {quantity_in_grams:.2f} grams of gold at current price, the eligible gold loan disbursement range is "
+                    f"{min_disbursement:.2f} to {max_disbursement:.2f} {currency}."
+                )
+
+            # Add fallback disclaimer if applicable
+            fallback_note = ""
+            if is_fallback_price:
+                fallback_note = (
+                    "\n\n**Note:** We used a conservative reference price (USD $50/oz) as live market data was unavailable. "
+                    "For the most accurate disbursement range, please provide the current market gold price, "
+                    "and we will recalculate your eligibility."
+                )
+
+            payload = {
+                "customer_query": user_query,
+                "gold_quantity_grams": quantity_in_grams,
+                "requested_loan_amount": gold_request.requested_loan_amount,
+                "requested_tenure_months": gold_request.requested_tenure_months,
+                "max_acceptable_emi": gold_request.max_acceptable_emi,
+                "current_price_source": price_data.get("source"),
+                "price_per_ounce": price_per_ounce,
+                "price_per_gram": round(price_per_gram, 2),
+                "total_gold_value": total_gold_value,
+                "min_disbursement": min_disbursement,
+                "max_disbursement": max_disbursement,
+                "amount_message": amount_message,
+                "fallback_note": fallback_note,
+            }
+
+            response_content = llm.invoke([
+                SystemMessage(content=GOLD_LOAN_SPECIALIST_PROMPT),
+                HumanMessage(content=json.dumps(payload, default=str))
+            ]).content
+        except Exception as exc:
+            print(f"   [GoldLoan] Unexpected error: {exc}")
+            response_content = (
+                "We encountered an error while calculating your gold loan eligibility. "
+                "Please try again or contact our customer service team for assistance."
+            )
+
+    tool_call_id = f"call_H_{customer_id}"
+    ai_msg = AIMessage(
+        content=f"Invoking gold_loan_specialist with current gold pricing...",
+        tool_calls=[{"name": "gold_loan_specialist", "args": {"query": user_query}, "id": tool_call_id}]
+    )
+    tool_msg = ToolMessage(content=str(response_content), tool_call_id=tool_call_id, name="gold_loan_specialist")
+
+    updated_extracted = dict(state.get("extracted_data", {}))
+    updated_extracted["current_step_index"] = updated_extracted.get("current_step_index", 0) + 1
+    updated_extracted["gold_loan_specialist"] = response_content
+
+    return {
+        "messages": [ai_msg, tool_msg],
+        "extracted_data": updated_extracted
+    }
+
+
 # ---------------------------------------------------------------------------
 # Structured Extraction Schemas
 # ---------------------------------------------------------------------------
@@ -91,6 +301,8 @@ class FinancialCalculationIntent(BaseModel):
     category: str = Field(description="Must be one of: 'EMI', 'FD', 'Savings_Tier', 'Cashback_Cap'")
     target_principal: Optional[float] = Field(None, description="The loan or deposit amount requested by user.")
     requested_tenures_months: List[int] = Field(default_factory=list, description="Explicit tenures requested by the user.")
+    loan_type: Optional[str] = Field(None, description="The requested loan type, such as Personal Loan, Home Loan, Gold Loan.")
+    max_acceptable_emi: Optional[float] = Field(None, description="The maximum monthly installment boundary specified by the user.")
     annual_rate_override: Optional[float] = Field(None, description="Explicit interest rate mentioned by the user.")
 
 class SemanticallyParsedOffer(BaseModel):
@@ -151,7 +363,12 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
             HumanMessage(content=f"Context details: {extracted_data}. Query: '{last_query}'")
         ])
     except Exception:
-        intent = FinancialCalculationIntent(category="EMI", target_principal=extracted_data.get("loan_amount"), requested_tenures_months=[])
+        intent = FinancialCalculationIntent(
+            category="EMI",
+            target_principal=extracted_data.get("loan_amount"),
+            requested_tenures_months=extracted_data.get("requested_tenure_months", []),
+            loan_type=extracted_data.get("loan_type")
+        )
 
     # 2. Extract database offers
     ctx = get_offer_context(customer_id)
@@ -160,7 +377,7 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
     # 3. Dynamic Filtering and Semantic Parsing Engine
     verified_calculation_results = []
     target_principal = intent.target_principal or extracted_data.get("loan_amount") or 0.0
-    max_acceptable_emi = extracted_data.get("max_acceptable_emi") or 0.0
+    max_acceptable_emi = intent.max_acceptable_emi if intent.max_acceptable_emi is not None else 0.0
 
     if target_principal > 0:
         # Instantiate a structured interpreter to parse unstructured text blocks on-the-fly
@@ -172,9 +389,11 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
             raw_content = details.get("content", str(details))
 
             # Semantically audit the unstructured text against the user's target inquiry properties
+            user_loan_type = intent.loan_type or "Personal Loan"
             parsing_prompt = f"""Analyze this bank offer block and extract its terms structural limits:
             Offer Content: "{raw_content}"
-            User Parameter Target Category: {intent.category} (e.g., if category is EMI, look for Personal Loans or similar amortized variants. Skip Home Loans if user specifically wanted a small dynamic personal metric, skip Credit cards, skip FDs)."""
+            User Parameter Target Category: {intent.category} (e.g., if category is EMI, look for Personal Loans or similar amortized variants. Skip Home Loans if user specifically wanted a small dynamic personal metric, skip Credit cards, skip FDs).
+            User Requested Loan Type: {user_loan_type}. Only match offers that align with this requested loan type or with generic lending products compatible with it."""
             
             try:
                 parsed_metrics = offer_interpreter.invoke([SystemMessage(content=parsing_prompt)])
@@ -197,9 +416,19 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
             # Use the minimum of requested principal or max allowed limit
             computed_principal = min(target_principal, parsed_metrics.extracted_max_limit)
 
-            # Handle dynamic tenure matching without default guessing
-            active_tenures = intent.requested_tenures_months
-            if not active_tenures:
+            # Enforce offer tenure limits: do not allow tenures longer than the offer permits.
+            offer_max_tenure_months = int(parsed_metrics.extracted_tenure_years * 12) if parsed_metrics.extracted_tenure_years else None
+            active_tenures = list(intent.requested_tenures_months)
+            if active_tenures:
+                if offer_max_tenure_months is not None:
+                    filtered_tenures = [t for t in active_tenures if t <= offer_max_tenure_months]
+                    if not filtered_tenures:
+                        print(
+                            f"   [Tenure Filter]: Skipping '{offer_id}' -> Requested tenure(s) {active_tenures} exceed offer max tenure of {offer_max_tenure_months} months."
+                        )
+                        continue
+                    active_tenures = filtered_tenures
+            else:
                 years = parsed_metrics.extracted_tenure_years or 3.0
                 active_tenures = [int(years * 12)]
 
@@ -243,10 +472,17 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
         )
     }
 
-    response_content = llm.invoke([
-        SystemMessage(content=PRODUCT_CALCULATOR_PROMPT),
-        HumanMessage(content=json.dumps(payload, default=str))
-    ]).content
+    if not verified_calculation_results:
+        response_content = (
+            f"Your requested amount of ₹{target_principal:,.0f} cannot be processed with the available offers. "
+            "No current offer supports that exact amount under the available loan limits. "
+            "Please reduce the requested amount or wait for a higher limit offer to become available."
+        )
+    else:
+        response_content = llm.invoke([
+            SystemMessage(content=PRODUCT_CALCULATOR_PROMPT),
+            HumanMessage(content=json.dumps(payload, default=str))
+        ]).content
 
     # 5. Graph Paired Messaging Execution Prototypes
     tool_call_id = f"call_D_{customer_id}"

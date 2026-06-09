@@ -40,6 +40,15 @@ def add_message(state: AgentState, message: Any) -> None:
     state.setdefault("messages", []).append(message)
 
 
+def append_short_term_memory(state: AgentState, memory: Any) -> None:
+    """Add a turn-level memory entry for the current session."""
+    extracted = state.setdefault("extracted_data", {})
+    history = extracted.setdefault("short_term_memory", [])
+    history.append(memory)
+    if len(history) > 10:
+        history.pop(0)
+
+
 def update_extracted(state: AgentState, **kwargs: Any) -> None:
     """Merge key/value pairs into ``state['extracted_data']``."""
     state.setdefault("extracted_data", {}).update(kwargs)

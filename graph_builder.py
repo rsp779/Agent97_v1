@@ -6,6 +6,8 @@ from workers_agent import (
     offers_specialist_node,
     transaction_specialist_node,
     loan_product_calculator_node,
+    home_loan_specialist_node,
+    gold_loan_specialist_node,
     credit_card_specialist_node,
     banking_specialist_node
 )
@@ -33,6 +35,8 @@ def router_edge(state: AgentState) -> Literal[
     "offers_specialist",
     "transaction_specialist",
     "loan_product_calculator",
+    "home_loan_specialist",
+    "gold_loan_specialist",
     "credit_card_specialist",
     "banking_specialist",
     "synthesis",
@@ -51,6 +55,8 @@ def router_edge(state: AgentState) -> Literal[
         "B": "offers_specialist",
         "C": "transaction_specialist",
         "D": "loan_product_calculator",
+        "G": "home_loan_specialist",
+        "H": "gold_loan_specialist",
         "E": "credit_card_specialist",
         "F": "banking_specialist",
     }
@@ -60,6 +66,8 @@ def router_edge(state: AgentState) -> Literal[
         "offers_specialist",
         "transaction_specialist",
         "loan_product_calculator",
+        "home_loan_specialist",
+        "gold_loan_specialist",
         "credit_card_specialist",
         "banking_specialist",
         "synthesis",
@@ -79,6 +87,8 @@ builder.add_node("supervisor", supervisor_node)
 builder.add_node("offers_specialist", offers_specialist_node)
 builder.add_node("transaction_specialist", transaction_specialist_node)
 builder.add_node("loan_product_calculator", loan_product_calculator_node)
+builder.add_node("home_loan_specialist", home_loan_specialist_node)
+builder.add_node("gold_loan_specialist", gold_loan_specialist_node)
 builder.add_node("credit_card_specialist", credit_card_specialist_node)
 builder.add_node("banking_specialist", banking_specialist_node)
 builder.add_node("synthesis", synthesis_node)
@@ -93,6 +103,8 @@ builder.add_conditional_edges(
         "offers_specialist": "offers_specialist",
         "transaction_specialist": "transaction_specialist",
         "loan_product_calculator": "loan_product_calculator",
+        "home_loan_specialist": "home_loan_specialist",
+        "gold_loan_specialist": "gold_loan_specialist",
         "credit_card_specialist": "credit_card_specialist",
         "banking_specialist": "banking_specialist",
         "synthesis": "synthesis",
@@ -104,6 +116,8 @@ for node_id in [
     "offers_specialist",
     "transaction_specialist",
     "loan_product_calculator",
+    "home_loan_specialist",
+    "gold_loan_specialist",
     "credit_card_specialist",
     "banking_specialist",
 ]:
@@ -114,6 +128,8 @@ for node_id in [
             "offers_specialist": "offers_specialist",
             "transaction_specialist": "transaction_specialist",
             "loan_product_calculator": "loan_product_calculator",
+            "home_loan_specialist": "home_loan_specialist",
+            "gold_loan_specialist": "gold_loan_specialist",
             "credit_card_specialist": "credit_card_specialist",
             "banking_specialist": "banking_specialist",
             "synthesis": "synthesis",

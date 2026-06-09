@@ -2,7 +2,7 @@ import json
 from langchain_core.messages import HumanMessage
 from data.mock_db import DATASTORE
 from settings import llm
-from agent_state import initialise_state, update_extracted
+from agent_state import initialise_state, update_extracted, append_short_term_memory
 from graph_builder import banking_financial_graph
 
 def main():
@@ -29,6 +29,11 @@ def main():
     # Initialize the centralized LangGraph execution matrix state safely
     state = initialise_state(customer_id=customer_id)
     update_extracted(state, **DATASTORE.get_customer_data(customer_id))
+    update_extracted(
+        state,
+        long_term_memory=DATASTORE.get_customer_long_term_memory(customer_id),
+        short_term_memory=[],
+    )
     state["is_in_scope"] = True
 
     while True:
@@ -77,6 +82,12 @@ def main():
         final_display = llm.invoke(terminal_cleanup_prompt).content.strip()
         print(f"\nRM : {final_display}\n")
         
+        # Track short-term memory for the current session
+        append_short_term_memory(output_state, {
+            "query": user_query,
+            "response": final_display,
+        })
+
         # Re-link live state track references to maintain persistent multi-turn history memory
         state = output_state
 
