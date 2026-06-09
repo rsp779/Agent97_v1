@@ -1,0 +1,398 @@
+{
+"rd": [
+{
+"transactionType": "UPI transfer",
+"categoryType": "Expenses",
+"amount": -20000.0,
+"timestamp": "19/03/26 12:43",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "UPI transfer",
+"categoryType": "Expenses",
+"amount": -899.0,
+"timestamp": "21/02/26 21:22",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "UPI transfer",
+"categoryType": "Expenses",
+"amount": -1274.28,
+"timestamp": "05/01/26 15:36",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "UPI transfer",
+"categoryType": "Expenses",
+"amount": -11444.2,
+"timestamp": "19/03/26 17:36",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "Others",
+"categoryType": "Savings",
+"amount": -12500.0,
+"timestamp": "12/01/26 0:32",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "Others",
+"categoryType": "Savings",
+"amount": -12500.0,
+"timestamp": "12/01/26 0:32",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "Others",
+"categoryType": "Savings",
+"amount": -12500.0,
+"timestamp": "12/01/26 0:39",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "UPI transfer",
+"categoryType": "Expenses",
+"amount": -223.0,
+"timestamp": "21/02/26 22:25",
+"MERC_NAME": null,
+"transaction_type": "Savings Account Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Business Services",
+"amount": 47.21,
+"timestamp": "03/03/26 19:27",
+"MERC_NAME": "ASTROTALK",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 100.0,
+"timestamp": "19/02/26 23:46",
+"MERC_NAME": "R V CATERS 1",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Business Services",
+"amount": 50.0,
+"timestamp": "28/12/25 2:01",
+"MERC_NAME": "GO EC",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Food",
+"amount": 25.0,
+"timestamp": "06/02/26 16:20",
+"MERC_NAME": "M1B0PEDFR",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Retail",
+"amount": 340.0,
+"timestamp": "13/03/26 22:39",
+"MERC_NAME": "M225V4EQ7G6W7",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 294.0,
+"timestamp": "20/12/25 21:57",
+"MERC_NAME": "VIRISHA FOODS",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Transportation services",
+"amount": 56.0,
+"timestamp": "17/02/26 19:57",
+"MERC_NAME": "Rapido",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "Offline",
+"categoryType": "Alcohol",
+"amount": 700.0,
+"timestamp": "11/02/26 14:14",
+"MERC_NAME": "SPOORTHI BAR AND REST",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "Online",
+"categoryType": "Education",
+"amount": 32960.0,
+"timestamp": "11/03/26 13:12",
+"MERC_NAME": "CRE*Dreamplug Tech",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Dept stores",
+"amount": 10.0,
+"timestamp": "08/03/26 7:02",
+"MERC_NAME": "ISMAYIL PALAMADATHIL",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 6466.0,
+"timestamp": "20/03/26 0:38",
+"MERC_NAME": "WOODSIDE INN",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "International",
+"categoryType": "Digital goods",
+"amount": 116.46,
+"timestamp": "11/01/26 11:06",
+"MERC_NAME": "PAYPAL *XSOLLA TWITCH",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "Offline",
+"categoryType": "Fuel",
+"amount": 4514.4,
+"timestamp": "23/12/25 13:17",
+"MERC_NAME": "M S USHA SPEEDWAYS HPC",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 1257.0,
+"timestamp": "17/12/25 23:31",
+"MERC_NAME": "EZETAP",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Dept stores",
+"amount": 30.0,
+"timestamp": "23/12/25 21:54",
+"MERC_NAME": "JANARDHAN GANGARAM J",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 16.0,
+"timestamp": "03/01/26 15:09",
+"MERC_NAME": "MIBZEGZTV",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Dept stores",
+"amount": 10.0,
+"timestamp": "20/03/26 0:38",
+"MERC_NAME": "Rajaram",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "Offline",
+"categoryType": "Hotels",
+"amount": 2148.0,
+"timestamp": "11/02/26 14:14",
+"MERC_NAME": "PUDUCHERRY BACKWATER",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 152.0,
+"timestamp": "10/03/26 13:00",
+"MERC_NAME": "Swiggy",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Dept stores",
+"amount": 50.0,
+"timestamp": "13/01/26 11:58",
+"MERC_NAME": "SRI KRISHNA KIRANA AND ST",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Misc Services",
+"amount": 1500.0,
+"timestamp": "31/01/26 12:59",
+"MERC_NAME": "NEW MAHAJAN GARMENTS",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "Offline",
+"categoryType": "Medical",
+"amount": 2503.0,
+"timestamp": "21/12/25 17:09",
+"MERC_NAME": "PADMA CHEMIST  AND DRU",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "Online",
+"categoryType": "Retail",
+"amount": 15000.0,
+"timestamp": "24/02/26 13:16",
+"MERC_NAME": "Malabar Gold and Di",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "Online",
+"categoryType": "Utility",
+"amount": 197.0,
+"timestamp": "02/01/26 20:07",
+"MERC_NAME": "BSNL",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Dept stores",
+"amount": 47.0,
+"timestamp": "29/01/26 13:25",
+"MERC_NAME": "BANK",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 55.0,
+"timestamp": "22/01/26 21:59",
+"MERC_NAME": "RABI KUMAR PASI",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Dept stores",
+"amount": 90.0,
+"timestamp": "30/12/25 14:12",
+"MERC_NAME": "UMA SHANKAR MITTAL",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Fuel",
+"amount": 4005.45,
+"timestamp": "27/01/26 21:48",
+"MERC_NAME": "HPCL",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Dept stores",
+"amount": 121.0,
+"timestamp": "06/02/26 16:20",
+"MERC_NAME": "Qmart",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Retail",
+"amount": 20000.0,
+"timestamp": "25/01/26 14:04",
+"MERC_NAME": "SRINIDHI SILKS",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Food",
+"amount": 1000.0,
+"timestamp": "16/12/25 23:21",
+"MERC_NAME": "DIPAN TEA CORNER",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 25.0,
+"timestamp": "20/12/25 0:27",
+"MERC_NAME": "M22MOOP5W0TEV",
+"transaction_type": "Credit Card Transaction"
+},
+{
+"transactionType": "UPI",
+"categoryType": "Food",
+"amount": 75.0,
+"timestamp": "06/01/26 18:02",
+"MERC_NAME": "Chef Baker s",
+"transaction_type": "Credit Card Transaction"
+}
+],
+"rsp": [
+{
+"timestamp": "15/01/26 18:20",
+"transactionType": "One time transfer",
+"categoryType": "Expenses",
+"amount": -21000,
+"transaction_type": "Savings Account Transaction",
+"MERC_NAME": null
+},
+{
+"timestamp": "05/01/26 22:09",
+"transactionType": "One time transfer",
+"categoryType": "Expenses",
+"amount": -5000,
+"transaction_type": "Savings Account Transaction",
+"MERC_NAME": null
+},
+{
+"timestamp": "22/02/26 13:30",
+"transactionType": "Offline",
+"categoryType": "Utility",
+"amount": 588.82,
+"transaction_type": "Credit Card Transaction",
+"MERC_NAME": "NETPLUS EXTREME PRIVATE"
+},
+{
+"timestamp": "15/02/26 18:06",
+"transactionType": "UPI",
+"categoryType": "Fuel",
+"amount": 265,
+"transaction_type": "Credit Card Transaction",
+"MERC_NAME": "PRABHAT SALES AND SE"
+},
+{
+"timestamp": "21/03/26 00:41",
+"transactionType": "UPI",
+"categoryType": "Retail",
+"amount": 206,
+"transaction_type": "Credit Card Transaction",
+"MERC_NAME": "Meesho"
+},
+{
+"timestamp": "21/03/26 00:42",
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 120,
+"transaction_type": "Credit Card Transaction",
+"MERC_NAME": "SUMIT PAWAR"
+},
+{
+"timestamp": "25/03/26 13:11",
+"transactionType": "Online",
+"categoryType": "Cloth stores",
+"amount": 331,
+"transaction_type": "Credit Card Transaction",
+"MERC_NAME": "Flipkart Internet PVT LTD"
+},
+{
+"timestamp": "12/02/26 19:25",
+"transactionType": "UPI",
+"categoryType": "Restaurants",
+"amount": 80,
+"transaction_type": "Credit Card Transaction",
+"MERC_NAME": "M1T7NNA5VLLV"
+}
+]
+}

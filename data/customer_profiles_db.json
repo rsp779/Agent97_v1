@@ -1,0 +1,27 @@
+{
+  "rd": {
+    "DEMOGS_CITY": "UJJAIN",
+    "DEMOGS_COUNTRY": "INDIA",
+    "DEMOGS_AGE_IN_YEARS": 25,
+    "DEMOGS_MARITAL_STATUS": "Unmarried",
+    "DEMOGS_OCCUPATION": "Salaried",
+    "DEMOGS_STATE": "MADHYA PRADESH",
+    "DEMOGS_GENDER_TYPE": "Male",
+    "DEMOGS_FIRST_NAME": "Rohit",
+    "DEMOGS_LAST_NAME": "Deshpande",
+    "customer_description": "I am an IDFC SELECT customer. I do most of daily transactions through this account. This includes groceries, rent, payments made to cook/maid. I also occasionally order stuff from Amazon, and use this account for payment. Apart from this, I also do monthly SIP's in mutual funds, which are linked to my IDFC account. I also use my credit card/debit card to avail lounge access at domestic airports. I would like offers on dining/online purchases on my IDFC credit card. The list of products I own are Credit Crad, Debit Card, Savings Account, SIP/MF."
+  },
+  "rsp": {
+    "DEMOGS_CITY": "RANCHI",
+    "DEMOGS_COUNTRY": "INDIA",
+    "DEMOGS_AGE_IN_YEARS": 26,
+    "DEMOGS_MARITAL_STATUS": "Unmarried",
+    "DEMOGS_OCCUPATION": "Salaried-Private",
+    "DEMOGS_STATE": "JHARKHAND",
+    "DEMOGS_GENDER_TYPE": "Male",
+    "DEMOGS_FIRST_NAME": "Rana Suraj",
+    "DEMOGS_LAST_NAME": "Pratap",
+    "customer_description": "I have been an IDFC Bank customer for last 4 years and I own a saving , select credit card and upi credit card. I frequently do transaction on upi credit card and use savings account as my salary account where I donot do much transactions"
+  }
+
+}

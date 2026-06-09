@@ -1,0 +1,32 @@
+{
+    "offer_1" : {
+        "content" : "Take Personal Loan at 15% interest and for 3 years max_limit 5 lakhs"
+    },
+    "offer_2" : {
+        "content" : "Take Personal Loan at 12% interest and for 5 years max_limit 3 lakhs"
+    },
+    "offer_3" : {
+        "content" : "Take Home Loan at 7.5% interest and for 20 years"
+    },
+    "offer_4" : {
+        "content" : "Take Home Loan at 8% interest and for 15 years"
+    },
+    "offer_5" : {
+        "content" : "Take New Credit Card for Travelling , Reward points worth Rs 1000 at Rs 15000 Spend"
+    },
+    "offer_6" : {
+        "content" : "Convert Your Credit Card Bill Spend to EMI , No Cost EMI starts from Rs 20000 transaction. This offer is valid only for our Credit Card"
+    },
+    "offer_7" : {
+        "content" : "Convert your Montly Petrol Bill to reward points , Take our Fuel Credit Card"
+    },
+    "offer_8" : {
+        "content" : "Rs 250 off on Rs 2000 transaction and above on our Credit Card in Amazon and Flipcart"
+    },
+    "offer_9" : {
+        "content" : "Rs 500 off on Rs 10000 transaction and above on our Credit Card on Flights"
+    },
+    "offer_10" : {
+        "content" : "Straight 8% yearly interest on FDs"
+    }
+}

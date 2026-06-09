@@ -1,0 +1,26 @@
+{
+   "rd" : [
+    { "offer_id": "offer_1", "score": 0.00208727411 },
+    { "offer_id": "offer_2", "score": 0.06008727411 },
+    { "offer_id": "offer_3", "score": 0.00108727411 },
+    { "offer_id": "offer_4", "score": 0.01008727411 },
+    { "offer_id": "offer_5", "score": 0.00038727411 },
+    { "offer_id": "offer_6", "score": 0.09008727411 },
+    { "offer_id": "offer_7", "score": 0.00048727411 },
+    { "offer_id": "offer_8", "score": 0.00608727411 },
+    { "offer_id": "offer_9", "score": 0.00608727411 },
+    { "offer_id": "offer_10", "score": 0.05008727411 }      
+  ],
+   "rsp" : [
+    { "offer_id": "offer_1", "score": 0.00208727411 },
+    { "offer_id": "offer_2", "score": 0.06008727411 },
+    { "offer_id": "offer_3", "score": 0.00108727411 },
+    { "offer_id": "offer_4", "score": 0.01008727411 },
+    { "offer_id": "offer_5", "score": 0.00038727411 },
+    { "offer_id": "offer_6", "score": 0.09008727411 },
+    { "offer_id": "offer_7", "score": 0.00048727411 },
+    { "offer_id": "offer_8", "score": 0.00608727411 },
+    { "offer_id": "offer_9", "score": 0.00608727411 },
+    { "offer_id": "offer_10", "score": 0.05008727411 }    
+  ]
+}
