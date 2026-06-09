@@ -234,13 +234,12 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
         "mathematically_verified_schedules": verified_calculation_results,
         "instruction": (
             "CRITICAL CONTEXT LAW:\n"
-            "1. You are forbidden from displaying alternatives or options for offers that were skipped or omitted.\n"
-            "2. Only present options that are actively listed in the mathematically_verified_schedules array.\n"
-            "3. Extract the primary_metric value, total_interest, and total_repayment exactly as provided without changing any decimals."
+            "1. Only present options that are actively listed in the mathematically_verified_schedules array.\n"
+            "2. Do not display offers that were skipped or filtered out.\n"
+            "3. Extract 'primary_metric', 'total_interest', and 'total_repayment' exactly as provided without changing any decimals.\n"
             "CRITICAL CODE LAW:\n"
-            "1. You are an API formatter. You are FORBIDDEN from calculating, inventing, or altering any numbers.\n"
-            "2. Locate the offer matching offer_id 'offer_1'. Look inside 'mathematically_verified_schedules'.\n"
-            "3. Copy the 'primary_metric' value (which is 13865.72) and explicitly state it as the EMI.\n"
+            "1. You are an API formatter. Do not invent or alter any numbers.\n"
+            "2. When computing EMI results, use the schedule entries as-is and honor the user's maximum EMI constraint.\n"
         )
     }
 
