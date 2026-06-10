@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Any, Literal
 from langgraph.graph import StateGraph, END
 from agent_state import AgentState
@@ -11,24 +12,32 @@ from workers_agent import (
     credit_card_specialist_node,
     banking_specialist_node
 )
-from prompts import SUPERVISOR_SYSTEM_PROMPT
 from langchain_core.messages import SystemMessage, AIMessage
 from settings import llm
 
 def synthesis_node(state: AgentState) -> Dict[str, Any]:
     print("   [*] Synthesizing final response package...")
     
-    semantic_logic_guard = """You are a strict financial communications compiler for IDFC FIRST Bank.
-Analyze the tool messages provided above and present the metrics directly to the user.
-Evaluate constraints dynamically, compute exact math values provided by tools, and maintain absolute alignment with verified banking numbers.
-If the user's query is vague, ambiguous, or missing required details, ask a concise clarifying question to gather the missing information instead of guessing.
+    semantic_logic_guard = """You are a customer-facing banking assistant for IDFC FIRST Bank.
+Write only plain English.
+Do not return JSON, code blocks, or labels like next_actor / should_exit / reason.
+Use only the verified values from the tool messages.
+If no valid offer or calculation is available, say that clearly in one short sentence and ask for the missing detail.
+Keep the reply brief, readable, and professional.
 """
     payload = [
-        SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT),
         SystemMessage(content=semantic_logic_guard)
     ] + state["messages"]
 
     final_text = llm.invoke(payload).content.strip()
+
+    try:
+        parsed = json.loads(final_text)
+        if isinstance(parsed, dict):
+            final_text = parsed.get("content") or parsed.get("reason") or final_text
+    except Exception:
+        pass
+
     return {"messages": [AIMessage(content=final_text)]}
 
 def router_edge(state: AgentState) -> Literal[

@@ -10,7 +10,8 @@ The system uses a state graph to route customer queries through specialized agen
 - Live gold-collateral loan specialist with real-time gold price fetching
 - Supervisor orchestrator for intent routing and clarification handling
 - Specialist agents for offers, transactions, loans, and banking metadata
-- Strict prompt rules to avoid inventing offer details or reward terms
+- Strict prompt rules to avoid inventing offer details, tenures, or reward terms
+- Deterministic offer-first routing with no terminal cleanup rewrite pass
 - Extensible for future card products, home loan variants, and collateral-based loan types
 
 ## File Overview
@@ -41,11 +42,13 @@ The system uses a state graph to route customer queries through specialized agen
 
 - Always use only the provided offer catalog and customer context.
 - Never invent benefits, rates, cashback, or reward points.
+- Never invent loan tenures, loan amounts, or offer limits.
 - Ask for clarification when the customer query is vague or missing details.
 - Route credit card-related queries to the `credit_card_specialist` agent.
 - Route home loan queries to the `home_loan_specialist` agent.
 - Route gold loan queries to the `gold_loan_specialist` agent with current gold pricing.
 - Maintain strict product isolation: Personal Loan terms do not apply to Home Loans or Gold Loans.
+- Do not use hidden fallback values in offer flows.
 
 ## Gold Loan Integration
 
@@ -54,7 +57,7 @@ The gold loan specialist:
 - Fetches current gold prices from public APIs (`https://data-asg.goldprice.org/dbXRates/USD`, `https://api.metals.live/v1/spot/gold`)
 - Calculates eligible loan disbursement range: `[0.8× total_gold_value, 1.2× total_gold_value]`
 - Validates requested loan amounts against the eligible range
-- Gracefully handles API failures with fallback messaging
+- Uses the only allowed fallback price when live pricing fails: `Rs 15000 per gram` or `$150 per gram`
 
 ### Testing
 
@@ -66,3 +69,8 @@ python test_gold_loan.py
 ## Notes
 
 This project is designed for extension. New credit card product variants, home loan features, and collateral-based loan types can be added in the catalog and prompt logic.
+
+## Response Style
+
+- The terminal prints the final graph response directly.
+- The output should be plain, customer-readable text, not raw JSON.

@@ -162,13 +162,16 @@ def fetch_current_gold_price(display_currency: Optional[str] = None) -> Dict[str
             break
 
     if usd_price_per_ounce is None:
+        display_currency = (display_currency or "INR").upper()
+        fallback_price_per_gram = 150.0 if display_currency == "USD" else 15000.0
+        fallback_price_per_ounce = fallback_price_per_gram * 31.1034768
         return {
-            "price_per_ounce": None,
-            "currency": (display_currency or "INR").upper(),
+            "price_per_ounce": round(fallback_price_per_ounce, 2),
+            "currency": display_currency,
             "source": None,
             "usd_to_inr_rate": None,
-            "is_fallback": False,
-            "needs_customer_price": True,
+            "is_fallback": True,
+            "fallback_price_per_gram": fallback_price_per_gram,
         }
 
     is_fallback = False
@@ -184,13 +187,14 @@ def fetch_current_gold_price(display_currency: Optional[str] = None) -> Dict[str
 
     usd_to_inr_rate = _fetch_usd_to_inr_rate()
     if usd_to_inr_rate is None:
+        fallback_price_per_gram = 15000.0
         return {
-            "price_per_ounce": None,
+            "price_per_ounce": round(fallback_price_per_gram * 31.1034768, 2),
             "currency": "INR",
             "source": source_url,
             "usd_to_inr_rate": None,
-            "is_fallback": False,
-            "needs_customer_price": True,
+            "is_fallback": True,
+            "fallback_price_per_gram": fallback_price_per_gram,
         }
     return {
         "price_per_ounce": round(usd_price_per_ounce * usd_to_inr_rate, 2),
@@ -340,7 +344,7 @@ def _find_customer_gold_loan_offer(customer_id: str) -> Dict[str, Any]:
     return {}
 
 
-def _detect_currency_from_query(query: str, fallback_currency: Optional[str] = None) -> str:
+def _detect_currency_from_query(query: str) -> str:
     lowered = query.lower()
     if any(token in query for token in ["₹", "rs", "inr"]):
         return "INR"
@@ -348,7 +352,7 @@ def _detect_currency_from_query(query: str, fallback_currency: Optional[str] = N
         return "INR"
     if any(token in query for token in ["$", "USD", "usd"]) or "dollar" in lowered:
         return "USD"
-    return (fallback_currency or "INR").upper()
+    return ""
 
 
 def _format_currency(amount: float, currency: str) -> str:
@@ -531,27 +535,21 @@ def gold_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
         )
     else:
         gold_request = _extract_gold_loan_terms_from_query(user_query)
-        previous_context = extracted.get("gold_loan_context", {}) if isinstance(extracted, dict) else {}
 
         quantity_in_grams = convert_gold_quantity_to_grams(
-            gold_request.get("gold_quantity_grams") or previous_context.get("gold_quantity_grams"),
-            gold_request.get("gold_quantity_tolas") or previous_context.get("gold_quantity_tolas"),
-            gold_request.get("gold_quantity_ounces") or previous_context.get("gold_quantity_ounces"),
+            gold_request.get("gold_quantity_grams"),
+            gold_request.get("gold_quantity_tolas"),
+            gold_request.get("gold_quantity_ounces"),
         )
 
-        requested_amount = (
-            gold_request.get("requested_loan_amount")
-            or previous_context.get("requested_loan_amount")
-        )
+        requested_amount = gold_request.get("requested_loan_amount")
         requested_currency = _detect_currency_from_query(
             user_query,
-            gold_request.get("requested_currency") or previous_context.get("currency") or "INR",
         )
         price_data = fetch_current_gold_price(requested_currency)
         price_per_ounce = price_data["price_per_ounce"]
         currency = price_data["currency"]
         price_per_gram = (price_per_ounce / 31.1034768) if price_per_ounce is not None else None
-        is_fallback_price = price_data.get("is_fallback", False)
 
         response_lines = []
         offer_content = selected_offer.get("content", "Gold loan offer")
@@ -559,13 +557,9 @@ def gold_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
         offer_tenure_months = selected_offer.get("tenure_months")
         response_lines.append(f"Eligible gold-loan offer: {offer_content}.")
 
-        if quantity_in_grams <= 0 and requested_amount is None and not previous_context:
+        if quantity_in_grams <= 0 and requested_amount is None:
             response_content = (
                 "Please share either the gold quantity you want to pledge or the loan amount you need, and I will calculate the eligible range."
-            )
-        elif price_data.get("needs_customer_price"):
-            response_content = (
-                f"I could not fetch a live gold price for {currency}. Please share the current gold price in {currency} so I can calculate the eligible loan range."
             )
         else:
             if quantity_in_grams > 0:
@@ -593,12 +587,12 @@ def gold_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
                         f"{required_gold_lower:.2f} to {required_gold_upper:.2f} grams of gold."
                     )
                     updated_context = {
-                        "gold_quantity_grams": quantity_in_grams if quantity_in_grams > 0 else previous_context.get("gold_quantity_grams"),
-                        "gold_quantity_tolas": gold_request.get("gold_quantity_tolas") or previous_context.get("gold_quantity_tolas"),
-                        "gold_quantity_ounces": gold_request.get("gold_quantity_ounces") or previous_context.get("gold_quantity_ounces"),
+                        "gold_quantity_grams": quantity_in_grams if quantity_in_grams > 0 else None,
+                        "gold_quantity_tolas": gold_request.get("gold_quantity_tolas"),
+                        "gold_quantity_ounces": gold_request.get("gold_quantity_ounces"),
                         "requested_loan_amount": requested_amount,
-                        "requested_tenure_months": gold_request.get("requested_tenure_months") or previous_context.get("requested_tenure_months") or [],
-                        "max_acceptable_emi": gold_request.get("max_acceptable_emi") or previous_context.get("max_acceptable_emi"),
+                        "requested_tenure_months": gold_request.get("requested_tenure_months") or [],
+                        "max_acceptable_emi": gold_request.get("max_acceptable_emi"),
                         "currency": currency,
                         "price_per_ounce": price_per_ounce,
                         "price_per_gram": round(price_per_gram, 2) if price_per_gram is not None else None,
@@ -637,8 +631,8 @@ def gold_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
                     f"{lower_grams:.2f} to {upper_grams:.2f} grams of gold."
                 )
 
-            tenure_months = gold_request.get("requested_tenure_months") or previous_context.get("requested_tenure_months") or []
-            max_acceptable_emi = gold_request.get("max_acceptable_emi") or previous_context.get("max_acceptable_emi")
+            tenure_months = gold_request.get("requested_tenure_months") or []
+            max_acceptable_emi = gold_request.get("max_acceptable_emi")
 
             if requested_amount is not None:
                 principal = requested_amount
@@ -672,9 +666,9 @@ def gold_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
             response_content = " ".join(response_lines)
 
             updated_context = {
-                "gold_quantity_grams": quantity_in_grams if quantity_in_grams > 0 else previous_context.get("gold_quantity_grams"),
-                "gold_quantity_tolas": gold_request.get("gold_quantity_tolas") or previous_context.get("gold_quantity_tolas"),
-                "gold_quantity_ounces": gold_request.get("gold_quantity_ounces") or previous_context.get("gold_quantity_ounces"),
+                "gold_quantity_grams": quantity_in_grams if quantity_in_grams > 0 else None,
+                "gold_quantity_tolas": gold_request.get("gold_quantity_tolas"),
+                "gold_quantity_ounces": gold_request.get("gold_quantity_ounces"),
                 "requested_loan_amount": requested_amount,
                 "requested_tenure_months": tenure_months,
                 "max_acceptable_emi": max_acceptable_emi,
@@ -722,8 +716,8 @@ class FinancialCalculationIntent(BaseModel):
 
 class SemanticallyParsedOffer(BaseModel):
     is_matching_category: bool = Field(description="True if this offer strictly matches the user's requested financial product type (e.g., Personal Loan vs Home Loan vs Credit Card).")
-    extracted_max_limit: float = Field(default=999999999.0, description="The maximum amount limit parsed from the text context. Map text terms like '5 lakhs' or '5L' to raw float numbers like 500000.0. Default to 999999999.0 if no limit is listed.")
-    extracted_interest_rate: float = Field(default=12.0, description="The interest rate percentage parsed from the text context (e.g., 15% -> 15.0).")
+    extracted_max_limit: Optional[float] = Field(None, description="The maximum amount limit parsed from the text context. Map text terms like '5 lakhs' or '5L' to raw float numbers like 500000.0.")
+    extracted_interest_rate: Optional[float] = Field(None, description="The interest rate percentage parsed from the text context (e.g., 15% -> 15.0).")
     extracted_tenure_years: Optional[float] = Field(None, description="The tenure in years parsed from the text context (e.g., 3 years -> 3.0).")
 
 
@@ -741,6 +735,21 @@ def run_reducing_balance_emi(principal: float, annual_rate: float, months: int) 
         "primary_metric": round(emi, 2),
         "total_interest": round(total_interest, 2),
         "total_repayment": round(total_repayment, 2)
+    }
+
+
+def run_reverse_reducing_balance_principal(emi: float, annual_rate: float, months: int) -> Dict[str, float]:
+    if emi <= 0 or annual_rate <= 0 or months <= 0:
+        return {"primary_metric": 0.0, "total_interest": 0.0, "total_repayment": 0.0}
+    r = (annual_rate / 12) / 100
+    factor = (math.pow(1 + r, months) - 1) / (r * math.pow(1 + r, months))
+    principal = emi * factor
+    total_repayment = emi * months
+    total_interest = total_repayment - principal
+    return {
+        "primary_metric": round(principal, 2),
+        "total_interest": round(total_interest, 2),
+        "total_repayment": round(total_repayment, 2),
     }
 
 def run_fixed_deposit_computation(principal: float, annual_rate: float, months: int) -> Dict[str, float]:
@@ -775,15 +784,10 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
         structured_extractor = llm.with_structured_output(FinancialCalculationIntent)
         intent = structured_extractor.invoke([
             SystemMessage(content=intent_prompt),
-            HumanMessage(content=f"Context details: {extracted_data}. Query: '{last_query}'")
+            HumanMessage(content=f"Query: '{last_query}'")
         ])
     except Exception:
-        intent = FinancialCalculationIntent(
-            category="EMI",
-            target_principal=extracted_data.get("loan_amount"),
-            requested_tenures_months=extracted_data.get("requested_tenure_months", []),
-            loan_type=extracted_data.get("loan_type")
-        )
+        intent = FinancialCalculationIntent(category="UNKNOWN")
 
     # 2. Extract database offers
     ctx = get_offer_context(customer_id)
@@ -791,89 +795,105 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
     
     # 3. Dynamic Filtering and Semantic Parsing Engine
     verified_calculation_results = []
-    target_principal = intent.target_principal or extracted_data.get("loan_amount") or 0.0
-    max_acceptable_emi = intent.max_acceptable_emi if intent.max_acceptable_emi is not None else 0.0
+    target_principal = intent.target_principal
+    max_acceptable_emi = intent.max_acceptable_emi
+    reverse_mode = target_principal is None or target_principal <= 0
 
-    if target_principal > 0:
-        # Instantiate a structured interpreter to parse unstructured text blocks on-the-fly
-        offer_interpreter = llm.with_structured_output(SemanticallyParsedOffer)
+    # Instantiate a structured interpreter to parse unstructured text blocks on-the-fly
+    offer_interpreter = llm.with_structured_output(SemanticallyParsedOffer)
 
-        for offer in available_offers:
-            offer_id = offer.get("offer_id", "unknown")
-            details = offer.get("offer_details", offer)
-            raw_content = details.get("content", str(details))
+    for offer in available_offers:
+        offer_id = offer.get("offer_id", "unknown")
+        details = offer.get("offer_details", offer)
+        raw_content = details.get("content", str(details))
 
-            # Semantically audit the unstructured text against the user's target inquiry properties
-            user_loan_type = intent.loan_type or "Personal Loan"
-            parsing_prompt = f"""Analyze this bank offer block and extract its terms structural limits:
-            Offer Content: "{raw_content}"
-            User Parameter Target Category: {intent.category} (e.g., if category is EMI, look for Personal Loans or similar amortized variants. Skip Home Loans if user specifically wanted a small dynamic personal metric, skip Credit cards, skip FDs).
-            User Requested Loan Type: {user_loan_type}. Only match offers that align with this requested loan type or with generic lending products compatible with it."""
-            
-            try:
-                parsed_metrics = offer_interpreter.invoke([SystemMessage(content=parsing_prompt)])
-            except Exception as e:
-                print(f"   [Interpreter Error]: Failed parsing offer {offer_id}: {e}")
-                continue
+        # Semantically audit the unstructured text against the user's target inquiry properties
+        user_loan_type = intent.loan_type or ""
+        parsing_prompt = f"""Analyze this bank offer block and extract its terms structural limits:
+        Offer Content: "{raw_content}"
+        User Parameter Target Category: {intent.category} (e.g., if category is EMI, look for Personal Loans or similar amortized variants. Skip Home Loans if user specifically wanted a small dynamic personal metric, skip Credit cards, skip FDs).
+        User Requested Loan Type: {user_loan_type}. Only match offers that align with this requested loan type or with generic lending products compatible with it."""
+        
+        try:
+            parsed_metrics = offer_interpreter.invoke([SystemMessage(content=parsing_prompt)])
+        except Exception as e:
+            print(f"   [Interpreter Error]: Failed parsing offer {offer_id}: {e}")
+            continue
 
-            # SEMANTIC FILTER 1: Skip if the product category doesn't align with the conversational theme
-            if not parsed_metrics.is_matching_category:
-                print(f"   [Semantic Filter]: Skipping '{offer_id}' -> Product category mismatch.")
-                continue
+        # SEMANTIC FILTER 1: Skip if the product category doesn't align with the conversational theme
+        if not parsed_metrics.is_matching_category:
+            print(f"   [Semantic Filter]: Skipping '{offer_id}' -> Product category mismatch.")
+            continue
 
-            # SEMANTIC FILTER 2: Strict eligibility guardrail check against true limits parsed from the string
-            if target_principal > parsed_metrics.extracted_max_limit:
-                print(f"   [Eligibility Filter]: Skipping '{offer_id}' (Max allowed: ₹{parsed_metrics.extracted_max_limit:,}) -> Cannot fulfill requested amount: ₹{target_principal:,}")
-                continue
+        if parsed_metrics.extracted_max_limit is None or parsed_metrics.extracted_interest_rate is None:
+            print(f"   [Offer Filter]: Skipping '{offer_id}' -> Offer is missing required rate or limit data.")
+            continue
 
-            # Apply true parsed parameters to the mathematical engine
-            active_rate = intent.annual_rate_override or parsed_metrics.extracted_interest_rate
-            # Use the minimum of requested principal or max allowed limit
-            computed_principal = min(target_principal, parsed_metrics.extracted_max_limit)
+        active_rate = intent.annual_rate_override or parsed_metrics.extracted_interest_rate
+        computed_principal = parsed_metrics.extracted_max_limit if reverse_mode else min(target_principal, parsed_metrics.extracted_max_limit)
 
-            # Enforce offer tenure limits: do not allow tenures longer than the offer permits.
-            offer_max_tenure_months = int(parsed_metrics.extracted_tenure_years * 12) if parsed_metrics.extracted_tenure_years else None
-            active_tenures = list(intent.requested_tenures_months)
-            if active_tenures:
-                if offer_max_tenure_months is not None:
-                    filtered_tenures = [t for t in active_tenures if t <= offer_max_tenure_months]
-                    if not filtered_tenures:
-                        print(
-                            f"   [Tenure Filter]: Skipping '{offer_id}' -> Requested tenure(s) {active_tenures} exceed offer max tenure of {offer_max_tenure_months} months."
-                        )
-                        continue
-                    active_tenures = filtered_tenures
+        # SEMANTIC FILTER 2: Strict eligibility guardrail check against true limits parsed from the string
+        if not reverse_mode and target_principal > parsed_metrics.extracted_max_limit:
+            print(f"   [Eligibility Filter]: Skipping '{offer_id}' (Max allowed: ₹{parsed_metrics.extracted_max_limit:,}) -> Cannot fulfill requested amount: ₹{target_principal:,}")
+            continue
+
+        if parsed_metrics.extracted_tenure_years is None:
+            print(f"   [Tenure Filter]: Skipping '{offer_id}' -> Offer does not specify tenure.")
+            continue
+
+        offer_max_tenure_months = int(parsed_metrics.extracted_tenure_years * 12)
+        active_tenures = list(intent.requested_tenures_months)
+        if reverse_mode and not active_tenures:
+            active_tenures = [offer_max_tenure_months]
+        if not active_tenures:
+            print(f"   [Tenure Filter]: Skipping '{offer_id}' -> No explicit tenure provided by the user.")
+            continue
+        filtered_tenures = [t for t in active_tenures if t <= offer_max_tenure_months]
+        if not filtered_tenures:
+            print(
+                f"   [Tenure Filter]: Skipping '{offer_id}' -> Requested tenure(s) {active_tenures} exceed offer max tenure of {offer_max_tenure_months} months."
+            )
+            continue
+
+        for tenure_m in filtered_tenures:
+            if intent.category == "FD":
+                math_metrics = run_fixed_deposit_computation(computed_principal, active_rate, tenure_m)
+                metric_label = "Maturity Amount Value"
             else:
-                years = parsed_metrics.extracted_tenure_years or 3.0
-                active_tenures = [int(years * 12)]
-
-            for tenure_m in active_tenures:
-                if intent.category == "FD":
-                    math_metrics = run_fixed_deposit_computation(computed_principal, active_rate, tenure_m)
-                    metric_label = "Maturity Amount Value"
+                if reverse_mode:
+                    if max_acceptable_emi is None or max_acceptable_emi <= 0:
+                        continue
+                    math_metrics = run_reverse_reducing_balance_principal(max_acceptable_emi, active_rate, tenure_m)
+                    metric_label = "Maximum Loan Amount"
                 else:
                     math_metrics = run_reducing_balance_emi(computed_principal, active_rate, tenure_m)
                     metric_label = "Monthly EMI Liability"
 
-                verified_calculation_results.append({
-                    "calculation_category": intent.category,
-                    "offer_id": offer_id,
-                    "offer_name": f"Pre-Approved Variant ({offer_id})",
-                    "interest_rate_applied": active_rate,
-                    "max_preapproved_limit_allowed": parsed_metrics.extracted_max_limit,
-                    "original_user_requested_amount": target_principal,
-                    "actual_processed_principal_math": computed_principal,
-                    "tenure_months": tenure_m,
-                    "tenure_years": round(tenure_m / 12, 1),
-                    "metric_type_label": metric_label,
-                    **math_metrics,
-                    "fits_user_stated_budget": math_metrics["primary_metric"] <= max_acceptable_emi if (max_acceptable_emi > 0 and intent.category == "EMI") else True
-                })
+            verified_calculation_results.append({
+                "calculation_category": intent.category,
+                "offer_id": offer_id,
+                "offer_name": f"Pre-Approved Variant ({offer_id})",
+                "interest_rate_applied": active_rate,
+                "max_preapproved_limit_allowed": parsed_metrics.extracted_max_limit,
+                "original_user_requested_amount": target_principal if target_principal is not None else max_acceptable_emi,
+                "actual_processed_principal_math": math_metrics["primary_metric"] if reverse_mode else computed_principal,
+                "tenure_months": tenure_m,
+                "tenure_years": round(tenure_m / 12, 1),
+                "metric_type_label": metric_label,
+                **math_metrics,
+                "fits_user_stated_budget": True if not reverse_mode else math_metrics["primary_metric"] > 0
+            })
+
+    if reverse_mode and verified_calculation_results:
+        verified_calculation_results.sort(
+            key=lambda item: item["actual_processed_principal_math"],
+            reverse=True,
+        )
 
     # 4. Bind parameters cleanly to presentation layer
     payload = {
         "calculation_type": intent.category,
-        "requested_volume": target_principal,
+        "requested_volume": target_principal if target_principal is not None else max_acceptable_emi,
         "max_acceptable_budget_constraint": max_acceptable_emi,
         "mathematically_verified_schedules": verified_calculation_results,
         "instruction": (
@@ -888,10 +908,23 @@ def loan_product_calculator_node(state: AgentState) -> Dict[str, Any]:
     }
 
     if not verified_calculation_results:
+        if reverse_mode and max_acceptable_emi is not None:
+            response_content = (
+                f"I could not calculate a maximum loan amount from the available offers for a monthly budget of ₹{max_acceptable_emi:,.0f}. "
+                "Please check whether the offer catalog contains a valid rate and tenure for this loan type."
+            )
+        else:
+            response_content = (
+                f"Your requested amount of ₹{target_principal:,.0f} cannot be processed with the available offers. "
+                "No current offer supports that exact amount under the available loan limits. "
+                "Please reduce the requested amount or wait for a higher limit offer to become available."
+            )
+    elif reverse_mode:
+        best_offer = verified_calculation_results[0]
         response_content = (
-            f"Your requested amount of ₹{target_principal:,.0f} cannot be processed with the available offers. "
-            "No current offer supports that exact amount under the available loan limits. "
-            "Please reduce the requested amount or wait for a higher limit offer to become available."
+            f"Based on the best eligible offer, you can take up to {_format_rupee_amount(best_offer['actual_processed_principal_math'])} "
+            f"for {best_offer['tenure_months']} months at {best_offer['interest_rate_applied']:.2f}% interest. "
+            f"Your monthly payment would stay within ₹{max_acceptable_emi:,.2f}."
         )
     else:
         response_content = llm.invoke([

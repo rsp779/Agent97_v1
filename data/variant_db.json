@@ -1,9 +1,9 @@
 {
     "offer_1" : {
-        "content" : "Take Personal Loan at 15% interest and for 3 years max_limit 5 lakhs"
+        "content" : "Take Personal Loan at 15% interest and for 3 years upto 5 lakhs"
     },
     "offer_2" : {
-        "content" : "Take Personal Loan at 12% interest and for 5 years max_limit 3 lakhs"
+        "content" : "Take Personal Loan at 12% interest and for 5 years upto 3 lakhs"
     },
     "offer_3" : {
         "content" : "Take Home Loan at 7.5% interest and for 20 years upto 50 lakhs"

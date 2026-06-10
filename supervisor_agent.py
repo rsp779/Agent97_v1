@@ -26,11 +26,9 @@ def _build_context_snapshot(state: AgentState) -> str:
         "current_step_index": extracted.get("current_step_index"),
         "loan_type": extracted.get("loan_type"),
         "loan_amount": extracted.get("loan_amount"),
-        "requested_tenure_months": extracted.get("requested_tenure_months"),
         "max_acceptable_emi": extracted.get("max_acceptable_emi"),
         "gold_loan_context": extracted.get("gold_loan_context"),
         "home_loan_requested_amount": extracted.get("home_loan_requested_amount"),
-        "home_loan_requested_tenure_months": extracted.get("home_loan_requested_tenure_months"),
         "recent_short_term_memory": recent_memory,
     }
     return json.dumps(snapshot, default=str)
@@ -84,6 +82,19 @@ def _route_from_context(state: AgentState, last_query: str) -> Optional[List[str
             return ["loan_product_calculator", "offers_specialist"]
 
     return None
+
+
+def _mentions_tenure(query: str) -> bool:
+    lowered = query.lower()
+    return any(token in lowered for token in ["tenure", "year", "years", "month", "months"])
+
+
+def _looks_like_budget_only_loan_query(query: str) -> bool:
+    lowered = query.lower()
+    return (
+        any(token in lowered for token in ["per month", "monthly", "emi", "installment"])
+        and not any(token in lowered for token in ["lakh", "lakhs", "crore", "crores", "amount", "loan of", "borrow"])
+    )
 
 def supervisor_node(state: AgentState) -> Dict[str, Any]:
     """Analyzes the user's query intent, builds a deterministic execution map,
@@ -164,7 +175,7 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         ])
         ordered_path = roadmap.ordered_path
     except Exception:
-        ordered_path = ["offers_specialist", "loan_product_calculator"]
+        ordered_path = []
 
     contextual_route = _route_from_context(state, last_query)
     if contextual_route is not None:
@@ -182,10 +193,7 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         structured_extractor = llm.with_structured_output(LoanParameters)
         extracted = structured_extractor.invoke([
             SystemMessage(content=extraction_prompt),
-            HumanMessage(content=(
-                f"Conversation context snapshot: {context_snapshot}\n"
-                f"Latest user message: '{last_query}'"
-            ))
+            HumanMessage(content=last_query)
         ])
         loan_amount = extracted.loan_amount
         max_acceptable_emi = extracted.max_acceptable_emi
@@ -200,6 +208,12 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         loan_type = "Home Loan"
     if contextual_route == ["credit_card_specialist"] and loan_type is None:
         loan_type = "Credit Card"
+
+    if not _mentions_tenure(last_query):
+        requested_tenure_months = []
+
+    if loan_amount is None and _looks_like_budget_only_loan_query(last_query):
+        ordered_path = ["offers_specialist", "loan_product_calculator"]
 
     print(f" -> [Generated Path]: {' -> '.join(ordered_path)}")
     print(f" -> [Extracted Entities]: Amount: {loan_amount}, Max EMI: {max_acceptable_emi}, Tenure months: {requested_tenure_months}, Loan type: {loan_type}")
