@@ -17,6 +17,74 @@ class LoanParameters(BaseModel):
     requested_tenure_months: List[int] = Field(default_factory=list, description="The requested loan tenure in months extracted from the user's query.")
     loan_type: Optional[str] = Field(None, description="The requested loan type, such as Personal Loan, Home Loan, Gold Loan, etc.")
 
+
+def _build_context_snapshot(state: AgentState) -> str:
+    extracted = state.get("extracted_data", {})
+    short_term = extracted.get("short_term_memory", [])
+    recent_memory = short_term[-3:] if isinstance(short_term, list) else []
+    snapshot = {
+        "current_step_index": extracted.get("current_step_index"),
+        "loan_type": extracted.get("loan_type"),
+        "loan_amount": extracted.get("loan_amount"),
+        "requested_tenure_months": extracted.get("requested_tenure_months"),
+        "max_acceptable_emi": extracted.get("max_acceptable_emi"),
+        "gold_loan_context": extracted.get("gold_loan_context"),
+        "home_loan_requested_amount": extracted.get("home_loan_requested_amount"),
+        "home_loan_requested_tenure_months": extracted.get("home_loan_requested_tenure_months"),
+        "recent_short_term_memory": recent_memory,
+    }
+    return json.dumps(snapshot, default=str)
+
+
+def _looks_like_follow_up_query(query: str) -> bool:
+    lowered = query.lower().strip()
+    if not lowered:
+        return False
+    follow_up_markers = [
+        "emi",
+        "tenure",
+        "months",
+        "month",
+        "repayment",
+        "amount",
+        "rate",
+        "interest",
+        "what will be",
+        "how much",
+    ]
+    return any(marker in lowered for marker in follow_up_markers) or lowered.replace(" ", "").isdigit()
+
+
+def _route_from_context(state: AgentState, last_query: str) -> Optional[List[str]]:
+    extracted = state.get("extracted_data", {})
+    lowered = last_query.lower().strip()
+    last_active = extracted.get("last_active_specialist")
+    explicit_home = "home loan" in lowered
+    explicit_gold = "gold loan" in lowered or "gold" in lowered
+    explicit_credit = any(token in lowered for token in ["credit card", "card ", " card", "cc "])
+    explicit_personal = "personal loan" in lowered
+
+    if _looks_like_follow_up_query(last_query):
+        if explicit_home:
+            return ["home_loan_specialist"]
+        if explicit_gold:
+            return ["gold_loan_specialist"]
+        if explicit_credit:
+            return ["credit_card_specialist"]
+        if explicit_personal:
+            return ["loan_product_calculator", "offers_specialist"]
+
+        if last_active == "home_loan_specialist":
+            return ["home_loan_specialist"]
+        if last_active == "gold_loan_specialist":
+            return ["gold_loan_specialist"]
+        if last_active == "credit_card_specialist":
+            return ["credit_card_specialist"]
+        if last_active in {"loan_product_calculator", "offers_specialist"}:
+            return ["loan_product_calculator", "offers_specialist"]
+
+    return None
+
 def supervisor_node(state: AgentState) -> Dict[str, Any]:
     """Analyzes the user's query intent, builds a deterministic execution map,
     and extracts entity parameters directly into the graph state.
@@ -26,6 +94,7 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         return {"extracted_data": {**state.get("extracted_data", {}), "ordered_path": [], "current_step_index": 0}}
     
     last_query = user_messages[-1].content
+    context_snapshot = _build_context_snapshot(state)
     print(f"\n[Supervisor]: Orchestrating request: '{last_query}'")
 
     system_routing_guide = """You are the Global Dependency Architect Matrix for IDFC FIRST Bank.
@@ -88,11 +157,18 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         structured_llm = llm.with_structured_output(ExecutionRoadmap)
         roadmap = structured_llm.invoke([
             SystemMessage(content=system_routing_guide),
-            HumanMessage(content=f"Analyze intent and compile roadmap path for query: '{last_query}'")
+            HumanMessage(content=(
+                f"Conversation context snapshot: {context_snapshot}\n"
+                f"Analyze intent and compile roadmap path for query: '{last_query}'"
+            ))
         ])
         ordered_path = roadmap.ordered_path
     except Exception:
         ordered_path = ["offers_specialist", "loan_product_calculator"]
+
+    contextual_route = _route_from_context(state, last_query)
+    if contextual_route is not None:
+        ordered_path = contextual_route
 
     # 2. Extract numeric entities matching input specifications
     extraction_prompt = """You are an accurate data extraction utility. Your sole job is to parse numeric values 
@@ -106,7 +182,10 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         structured_extractor = llm.with_structured_output(LoanParameters)
         extracted = structured_extractor.invoke([
             SystemMessage(content=extraction_prompt),
-            HumanMessage(content=last_query)
+            HumanMessage(content=(
+                f"Conversation context snapshot: {context_snapshot}\n"
+                f"Latest user message: '{last_query}'"
+            ))
         ])
         loan_amount = extracted.loan_amount
         max_acceptable_emi = extracted.max_acceptable_emi
@@ -114,6 +193,13 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         loan_type = extracted.loan_type
     except Exception:
         loan_amount, max_acceptable_emi, requested_tenure_months, loan_type = None, None, [], None
+
+    if contextual_route == ["gold_loan_specialist"] and loan_type is None:
+        loan_type = "Gold Loan"
+    if contextual_route == ["home_loan_specialist"] and loan_type is None:
+        loan_type = "Home Loan"
+    if contextual_route == ["credit_card_specialist"] and loan_type is None:
+        loan_type = "Credit Card"
 
     print(f" -> [Generated Path]: {' -> '.join(ordered_path)}")
     print(f" -> [Extracted Entities]: Amount: {loan_amount}, Max EMI: {max_acceptable_emi}, Tenure months: {requested_tenure_months}, Loan type: {loan_type}")
@@ -126,7 +212,7 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         "loan_amount": loan_amount,
         "max_acceptable_emi": max_acceptable_emi,
         "requested_tenure_months": requested_tenure_months,
-        "loan_type": loan_type
+        "loan_type": loan_type,
     })
 
     return {"extracted_data": updated_extracted}

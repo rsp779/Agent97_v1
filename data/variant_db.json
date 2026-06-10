@@ -28,5 +28,8 @@
     },
     "offer_10" : {
         "content" : "Straight 8% yearly interest on FDs"
+    },
+    "offer_11" : {
+        "content" : "Take Gold Loan at 9% interest for 24 months against pledged gold collateral"
     }
 }

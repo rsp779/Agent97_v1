@@ -1,0 +1,34 @@
+flowchart TD
+    A[main.py\nCLI entry] --> B[Load customer profile\nInitialize AgentState]
+    B --> C[Append user message\nRun LangGraph]
+    C --> D[supervisor_node]
+    D --> E{Route decision}
+
+    E -->|Home Loan| H1[home_loan_specialist]
+    E -->|Gold Loan| G1[gold_loan_specialist]
+    E -->|Credit Card| K1[credit_card_specialist]
+    E -->|Transactions| T1[transaction_specialist]
+    E -->|Offers| O1[offers_specialist]
+    E -->|Loan Calc| L1[loan_product_calculator]
+    E -->|Banking| B1[banking_specialist]
+    E -->|Ambiguous| Q1[Ask clarification]
+
+    H1 --> S[synthesis_node]
+    G1 --> S
+    K1 --> S
+    T1 --> S
+    O1 --> S
+    L1 --> S
+    B1 --> S
+    Q1 --> S
+
+    S --> F[main.py cleanup\nshort terminal response]
+    F --> C
+
+    H1 -. uses .-> HC[customer offer scope\nhome loan only]
+    G1 -. uses .-> GC[customer offer scope\nplus live gold price]
+    K1 -. uses .-> KC[customer offer scope\ncredit card offers]
+    T1 -. uses .-> TC[transactions]
+    O1 -. uses .-> OC[offer catalog + scores]
+    B1 -. uses .-> BC[customer profile + memory]
+

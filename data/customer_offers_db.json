@@ -9,7 +9,8 @@
     { "offer_id": "offer_7", "score": 0.00048727411 },
     { "offer_id": "offer_8", "score": 0.00608727411 },
     { "offer_id": "offer_9", "score": 0.00608727411 },
-    { "offer_id": "offer_10", "score": 0.05008727411 }      
+    { "offer_id": "offer_10", "score": 0.05008727411 },
+    { "offer_id": "offer_11", "score": 0.04008727411 }
   ],
    "rsp" : [
     { "offer_id": "offer_1", "score": 0.00208727411 },
@@ -21,6 +22,7 @@
     { "offer_id": "offer_7", "score": 0.00048727411 },
     { "offer_id": "offer_8", "score": 0.00608727411 },
     { "offer_id": "offer_9", "score": 0.00608727411 },
-    { "offer_id": "offer_10", "score": 0.05008727411 }    
+    { "offer_id": "offer_10", "score": 0.05008727411 },
+    { "offer_id": "offer_11", "score": 0.04008727411 }
   ]
 }

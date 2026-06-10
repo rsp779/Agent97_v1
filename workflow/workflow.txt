@@ -1,0 +1,31 @@
+WORKFLOW FLOW
+
+main.py
+  -> load customer
+  -> initialize AgentState
+  -> add user message
+  -> invoke LangGraph
+  -> supervisor_node
+  -> route decision
+
+ROUTES
+  home_loan_specialist
+  gold_loan_specialist
+  credit_card_specialist
+  transaction_specialist
+  offers_specialist
+  loan_product_calculator
+  banking_specialist
+  clarification
+
+AFTER ROUTE
+  specialist node
+  -> synthesis_node
+  -> final cleanup in main.py
+  -> print response
+  -> keep conversation state
+
+FOLLOW-UP BEHAVIOR
+  last_active_specialist is stored in extracted_data
+  bare follow-up queries can reuse the active thread
+

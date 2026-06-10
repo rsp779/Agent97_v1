@@ -1,5 +1,6 @@
 import json
 import math
+import re
 import ssl
 from typing import Dict, Any, List, Optional
 from urllib.error import HTTPError, URLError
@@ -47,62 +48,156 @@ def get_banking_context(customer_id: str) -> dict:
 # External Gold Price Fetch Helpers
 
 
-def fetch_current_gold_price() -> Dict[str, Any]:
+def _fetch_json_from_url(url: str) -> Optional[Any]:
     headers = {"User-Agent": "Mozilla/5.0"}
+    context = ssl.create_default_context()
+    try:
+        request = Request(url, headers=headers)
+        with urlopen(request, timeout=10, context=context) as response:
+            payload = response.read().decode("utf-8")
+        return json.loads(payload)
+    except (HTTPError, URLError, json.JSONDecodeError, ValueError) as exc:
+        print(f"   [GoldPrice] Failed to fetch from {url}: {exc}")
+        return None
+
+
+def _fetch_text_from_url(url: str) -> Optional[str]:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    context = ssl.create_default_context()
+    try:
+        request = Request(url, headers=headers)
+        with urlopen(request, timeout=10, context=context) as response:
+            return response.read().decode("utf-8", errors="ignore")
+    except (HTTPError, URLError, ValueError) as exc:
+        print(f"   [GoldPrice] Failed to fetch text from {url}: {exc}")
+        return None
+
+
+def _extract_oz_price_from_text(text: str) -> Optional[float]:
+    patterns = [
+        r"\$<!-- -->([0-9][0-9,]*(?:\.[0-9]+)?)<span[^>]*>Per\s*Oz\.",
+        r'"price"\s*:\s*([0-9][0-9,]*(?:\.[0-9]+)?)',
+        r"price\":([0-9][0-9,]*(?:\.[0-9]+)?)",
+        r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*Per\s*Oz",
+        r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*Per\s*Oz",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return float(match.group(1).replace(",", ""))
+    return None
+
+
+def _fetch_usd_to_inr_rate() -> float:
     endpoints = [
+        "https://open.er-api.com/v6/latest/USD",
+        "https://api.exchangerate.host/latest?base=USD&symbols=INR",
+    ]
+    for url in endpoints:
+        data = _fetch_json_from_url(url)
+        if data is None:
+            continue
+        if isinstance(data, dict):
+            if "rates" in data and isinstance(data["rates"], dict) and data["rates"].get("INR"):
+                return float(data["rates"]["INR"])
+            if "result" in data and data.get("result") == "success":
+                rates = data.get("rates") or {}
+                if rates.get("INR"):
+                    return float(rates["INR"])
+            if "INR" in data and isinstance(data["INR"], (int, float)):
+                return float(data["INR"])
+    return None
+
+
+def fetch_current_gold_price(display_currency: Optional[str] = None) -> Dict[str, Any]:
+    endpoints = [
+        "https://gold-api.com/",
         "https://data-asg.goldprice.org/dbXRates/USD",
         "https://api.metals.live/v1/spot/gold",
     ]
-    context = ssl.create_default_context()
+
+    usd_price_per_ounce: Optional[float] = None
+    source_url: Optional[str] = None
 
     for url in endpoints:
-        try:
-            request = Request(url, headers=headers)
-            with urlopen(request, timeout=10, context=context) as response:
-                payload = response.read().decode("utf-8")
-            data = json.loads(payload)
-        except (HTTPError, URLError, json.JSONDecodeError, ValueError) as exc:
-            print(f"   [GoldPrice] Failed to fetch from {url}: {exc}")
+        if url == "https://gold-api.com/":
+            text = _fetch_text_from_url(url)
+            if text is not None:
+                usd_price_per_ounce = _extract_oz_price_from_text(text)
+                if usd_price_per_ounce is not None:
+                    source_url = url
+                    break
+            continue
+
+        data = _fetch_json_from_url(url)
+        if data is None:
             continue
 
         if isinstance(data, dict):
             items = data.get("items") or data.get("data")
             if isinstance(items, list) and items:
                 item = items[0]
-                price = None
                 for key in ["xauPrice", "price", "last"]:
                     if isinstance(item, dict) and key in item:
-                        price = item[key]
+                        usd_price_per_ounce = float(item[key])
+                        source_url = url
                         break
-                if price is not None:
-                    return {
-                        "price_per_ounce": float(price),
-                        "currency": "USD",
-                        "source": url,
-                    }
-            if "price" in data:
-                return {
-                    "price_per_ounce": float(data["price"]),
-                    "currency": "USD",
-                    "source": url,
-                }
+            if usd_price_per_ounce is None and "price" in data:
+                usd_price_per_ounce = float(data["price"])
+                source_url = url
         elif isinstance(data, list) and data:
             first = data[0]
-            if isinstance(first, dict) and "price" in first:
-                return {
-                    "price_per_ounce": float(first["price"]),
-                    "currency": "USD",
-                    "source": url,
-                }
+            if isinstance(first, dict):
+                for key in ["xauPrice", "price", "last"]:
+                    if key in first:
+                        usd_price_per_ounce = float(first[key])
+                        source_url = url
+                        break
 
-    # Fallback: Use conservative gold price estimate (₹1.5L reference for typical pledges)
-    # Fallback price: $50/ounce ≈ ₹1,550/gram (conservative estimate)
-    print("   [GoldPrice] All endpoints failed. Using fallback price estimate.")
+        if usd_price_per_ounce is not None:
+            break
+
+    if usd_price_per_ounce is None:
+        return {
+            "price_per_ounce": None,
+            "currency": (display_currency or "INR").upper(),
+            "source": None,
+            "usd_to_inr_rate": None,
+            "is_fallback": False,
+            "needs_customer_price": True,
+        }
+
+    is_fallback = False
+    display_currency = (display_currency or "INR").upper()
+    if display_currency == "USD":
+        return {
+            "price_per_ounce": usd_price_per_ounce,
+            "currency": "USD",
+            "source": source_url,
+            "usd_to_inr_rate": None,
+            "is_fallback": is_fallback,
+        }
+
+    usd_to_inr_rate = _fetch_usd_to_inr_rate()
+    if usd_to_inr_rate is None:
+        return {
+            "price_per_ounce": None,
+            "currency": "INR",
+            "source": source_url,
+            "usd_to_inr_rate": None,
+            "is_fallback": False,
+            "needs_customer_price": True,
+        }
     return {
-        "price_per_ounce": 50.0,
-        "currency": "USD",
-        "source": "fallback_conservative_estimate",
-        "is_fallback": True,
+        "price_per_ounce": round(usd_price_per_ounce * usd_to_inr_rate, 2),
+        "currency": "INR",
+        "source": source_url,
+        "usd_to_inr_rate": usd_to_inr_rate,
+        "is_fallback": is_fallback,
     }
 
 
@@ -114,6 +209,189 @@ def convert_gold_quantity_to_grams(grams: Optional[float], tolas: Optional[float
     if ounces is not None and ounces > 0:
         return ounces * 31.1034768
     return 0.0
+
+
+def _format_rupee_amount(amount: float) -> str:
+    return f"₹{amount:,.2f}"
+
+
+def _parse_home_loan_offer_terms(content: str) -> Dict[str, Any]:
+    lowered = content.lower()
+
+    rate_match = re.search(r"(\d+(?:\.\d+)?)\s*%.*?interest", lowered)
+    tenure_match = re.search(r"for\s+(\d+)\s+years", lowered)
+    limit_match = re.search(r"upto\s+(\d+(?:\.\d+)?)\s*(crores?|crore|lakhs?|lacs?|lac)", lowered)
+
+    max_limit = None
+    if limit_match:
+        value = float(limit_match.group(1))
+        unit = limit_match.group(2)
+        if unit.startswith("crore"):
+            max_limit = value * 10_000_000
+        else:
+            max_limit = value * 100_000
+
+    return {
+        "interest_rate": float(rate_match.group(1)) if rate_match else None,
+        "tenure_years": int(tenure_match.group(1)) if tenure_match else None,
+        "max_limit": max_limit,
+    }
+
+
+def _parse_loan_offer_terms(content: str) -> Dict[str, Any]:
+    lowered = content.lower()
+
+    rate_match = re.search(r"(\d+(?:\.\d+)?)\s*%.*?interest", lowered)
+    tenure_match = re.search(r"for\s+(\d+)\s+(years?|months?)", lowered)
+    limit_match = re.search(r"upto\s+(\d+(?:\.\d+)?)\s*(crores?|crore|lakhs?|lacs?|lac)", lowered)
+
+    max_limit = None
+    if limit_match:
+        value = float(limit_match.group(1))
+        unit = limit_match.group(2)
+        if unit.startswith("crore"):
+            max_limit = value * 10_000_000
+        else:
+            max_limit = value * 100_000
+
+    tenure_months = None
+    if tenure_match:
+        value = int(tenure_match.group(1))
+        unit = tenure_match.group(2)
+        tenure_months = value * 12 if unit.startswith("year") else value
+
+    return {
+        "interest_rate": float(rate_match.group(1)) if rate_match else None,
+        "tenure_months": tenure_months,
+        "max_limit": max_limit,
+    }
+
+
+def _select_best_home_loan_offer(
+    customer_id: str,
+    requested_amount: Optional[float],
+    requested_tenure_months: List[int],
+) -> Dict[str, Any]:
+    catalog = DATASTORE.get_offer_catalog()
+    eligible_offer_ids = {
+        item.get("offer_id")
+        for item in DATASTORE.get_customer_offer_scores(customer_id)
+        if item.get("offer_id")
+    }
+    candidates = []
+
+    for offer_id, offer in catalog.items():
+        if offer_id not in eligible_offer_ids:
+            continue
+        content = (offer or {}).get("content", "")
+        if "home loan" not in content.lower():
+            continue
+
+        terms = _parse_home_loan_offer_terms(content)
+        max_limit = terms["max_limit"]
+        tenure_years = terms["tenure_years"]
+        interest_rate = terms["interest_rate"]
+
+        if requested_amount is not None and max_limit is not None and requested_amount > max_limit:
+            continue
+
+        if requested_tenure_months and tenure_years is not None:
+            if any(tenure > tenure_years * 12 for tenure in requested_tenure_months):
+                continue
+
+        candidates.append(
+            {
+                "offer_id": offer_id,
+                "content": content,
+                "interest_rate": interest_rate,
+                "tenure_years": tenure_years,
+                "max_limit": max_limit,
+            }
+        )
+
+    if not candidates:
+        return {}
+
+    candidates.sort(
+        key=lambda item: (
+            item["interest_rate"] if item["interest_rate"] is not None else float("inf"),
+            item["max_limit"] if item["max_limit"] is not None else float("inf"),
+            item["tenure_years"] if item["tenure_years"] is not None else float("inf"),
+        )
+    )
+    return candidates[0]
+
+
+def _find_customer_gold_loan_offer(customer_id: str) -> Dict[str, Any]:
+    catalog = DATASTORE.get_offer_catalog()
+    for item in DATASTORE.get_customer_offer_scores(customer_id):
+        offer_id = item.get("offer_id")
+        content = catalog.get(offer_id, {}).get("content", "")
+        if "gold loan" not in content.lower():
+            continue
+        terms = _parse_loan_offer_terms(content)
+        return {
+            "offer_id": offer_id,
+            "content": content,
+            "interest_rate": terms["interest_rate"],
+            "tenure_months": terms["tenure_months"],
+            "max_limit": terms["max_limit"],
+        }
+    return {}
+
+
+def _detect_currency_from_query(query: str, fallback_currency: Optional[str] = None) -> str:
+    lowered = query.lower()
+    if any(token in query for token in ["₹", "rs", "inr"]):
+        return "INR"
+    if any(token in lowered for token in ["rupee", "rupees", "lakh", "lakhs", "crore", "crores"]):
+        return "INR"
+    if any(token in query for token in ["$", "USD", "usd"]) or "dollar" in lowered:
+        return "USD"
+    return (fallback_currency or "INR").upper()
+
+
+def _format_currency(amount: float, currency: str) -> str:
+    currency = currency.upper()
+    if currency == "USD":
+        return f"${amount:,.2f}"
+    return f"₹{amount:,.2f}"
+
+
+def _extract_gold_loan_terms_from_query(query: str) -> Dict[str, Any]:
+    class GoldLoanRequest(BaseModel):
+        gold_quantity_grams: Optional[float] = Field(None, description="Gold quantity pledged in grams.")
+        gold_quantity_tolas: Optional[float] = Field(None, description="Gold quantity pledged in tolas.")
+        gold_quantity_ounces: Optional[float] = Field(None, description="Gold quantity pledged in ounces.")
+        requested_loan_amount: Optional[float] = Field(None, description="The requested gold loan amount.")
+        requested_tenure_months: List[int] = Field(default_factory=list, description="Requested loan tenure in months.")
+        max_acceptable_emi: Optional[float] = Field(None, description="The maximum EMI the customer can pay.")
+        requested_currency: Optional[str] = Field(None, description="Requested currency code such as INR or USD.")
+
+    extraction_prompt = """You are a precise extraction assistant for gold loan customer requests.
+Extract the following values from the customer query. Convert numeric words like 'lakh' or 'tola' to raw float values.
+If a value is missing, leave it null or an empty list.
+
+Fields:
+- gold_quantity_grams
+- gold_quantity_tolas
+- gold_quantity_ounces
+- requested_loan_amount
+- requested_tenure_months
+- max_acceptable_emi
+- requested_currency
+"""
+    try:
+        structured_extractor = llm.with_structured_output(GoldLoanRequest)
+        extracted = structured_extractor.invoke([
+            SystemMessage(content=extraction_prompt),
+            HumanMessage(content=query)
+        ])
+        return extracted.model_dump()
+    except Exception as exc:
+        print(f"   [GoldLoan] Extraction failed: {exc}")
+        return GoldLoanRequest().model_dump()
+
 
 # ---------------------------------------------------------------------------
 # Generic Worker Execution Core (Sub-Agents B, C, E, F)
@@ -146,6 +424,7 @@ def generic_worker_runner(state: AgentState, agent_id: str, agent_name: str, pro
     updated_extracted = dict(state.get("extracted_data", {}))
     updated_extracted["current_step_index"] = updated_extracted.get("current_step_index", 0) + 1
     updated_extracted[agent_name] = response_content
+    updated_extracted["last_active_specialist"] = agent_name
 
     return {
         "messages": [ai_msg, tool_msg],
@@ -166,120 +445,253 @@ def credit_card_specialist_node(state: AgentState) -> Dict[str, Any]:
 
 
 def home_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
-    return generic_worker_runner(state, "G", "home_loan_specialist", HOME_LOAN_SPECIALIST_PROMPT, get_offer_context)
+    customer_id = state["customer_id"]
+    extracted = state.get("extracted_data", {})
+    user_query = state["messages"][-1].content if state.get("messages") else ""
+    requested_amount = extracted.get("loan_amount")
+    requested_tenures = extracted.get("requested_tenure_months", []) or []
+    requested_emi = extracted.get("max_acceptable_emi")
+
+    print(f"   [*] Invoking Sub-Agent [G] (home_loan_specialist)...")
+
+    if requested_amount is None and not requested_tenures and requested_emi is None:
+        response_content = (
+            "Please share the home loan amount, tenure, or EMI target so I can check your eligible home loan offer."
+        )
+    else:
+        selected_offer = _select_best_home_loan_offer(customer_id, requested_amount, requested_tenures)
+
+        if not selected_offer:
+            response_content = (
+                "No eligible home loan offer in your customer profile matches the requested amount and tenure."
+            )
+        else:
+            offer_content = selected_offer["content"]
+            interest_rate = selected_offer["interest_rate"]
+
+            if requested_amount is None:
+                response_content = (
+                    f"Your eligible home loan offer is: {offer_content}. Please share the loan amount to calculate EMI."
+                )
+            elif not requested_tenures:
+                response_content = (
+                    f"Your eligible home loan offer is: {offer_content}. Please share the tenure to calculate EMI."
+                )
+            elif interest_rate is None:
+                response_content = (
+                    f"Your eligible home loan offer is: {offer_content}. The catalog does not include an interest rate, so EMI cannot be calculated."
+                )
+            else:
+                tenure_months = requested_tenures[0]
+                math_metrics = run_reducing_balance_emi(requested_amount, interest_rate, tenure_months)
+                emi = math_metrics["primary_metric"]
+                total_interest = math_metrics["total_interest"]
+                total_repayment = math_metrics["total_repayment"]
+
+                response_content = (
+                    f"Your eligible home loan offer is: {offer_content}. "
+                    f"For {_format_rupee_amount(requested_amount)} over {tenure_months} months, the estimated EMI is "
+                    f"{_format_rupee_amount(emi)}, total interest is {_format_rupee_amount(total_interest)}, "
+                    f"and total repayment is {_format_rupee_amount(total_repayment)}."
+                )
+
+    tool_call_id = f"call_G_{customer_id}"
+    ai_msg = AIMessage(
+        content="Selecting the best matching home loan offer from the catalog...",
+        tool_calls=[{"name": "home_loan_specialist", "args": {"query": user_query}, "id": tool_call_id}]
+    )
+    tool_msg = ToolMessage(content=str(response_content), tool_call_id=tool_call_id, name="home_loan_specialist")
+
+    updated_extracted = dict(extracted)
+    updated_extracted["current_step_index"] = updated_extracted.get("current_step_index", 0) + 1
+    updated_extracted["home_loan_specialist"] = response_content
+    updated_extracted["last_active_specialist"] = "home_loan_specialist"
+    if requested_amount is not None:
+        updated_extracted["home_loan_requested_amount"] = requested_amount
+    if requested_tenures:
+        updated_extracted["home_loan_requested_tenure_months"] = requested_tenures
+
+    return {
+        "messages": [ai_msg, tool_msg],
+        "extracted_data": updated_extracted
+    }
 
 
 def gold_loan_specialist_node(state: AgentState) -> Dict[str, Any]:
     customer_id = state["customer_id"]
+    extracted = state.get("extracted_data", {})
     user_query = state["messages"][-1].content if state.get("messages") else ""
     print(f"   [*] Invoking Sub-Agent [H] (gold_loan_specialist)...")
+    updated_context = None
+    selected_offer = _find_customer_gold_loan_offer(customer_id)
 
-    class GoldLoanRequest(BaseModel):
-        gold_quantity_grams: Optional[float] = Field(None, description="Gold quantity pledged in grams.")
-        gold_quantity_tolas: Optional[float] = Field(None, description="Gold quantity pledged in tolas.")
-        gold_quantity_ounces: Optional[float] = Field(None, description="Gold quantity pledged in ounces.")
-        requested_loan_amount: Optional[float] = Field(None, description="The requested gold loan amount.")
-        requested_tenure_months: List[int] = Field(default_factory=list, description="Requested loan tenure in months.")
-        max_acceptable_emi: Optional[float] = Field(None, description="The maximum EMI the customer can pay.")
-
-    extraction_prompt = """You are a precise extraction assistant for gold loan customer requests.
-Extract the following values from the customer query. Convert numeric words like 'lakh' or 'tola' to raw float values.
-If a value is missing, leave it null or an empty list.
-
-Fields:
-- gold_quantity_grams
-- gold_quantity_tolas
-- gold_quantity_ounces
-- requested_loan_amount
-- requested_tenure_months
-- max_acceptable_emi
-"""
-    try:
-        structured_extractor = llm.with_structured_output(GoldLoanRequest)
-        gold_request = structured_extractor.invoke([
-            SystemMessage(content=extraction_prompt),
-            HumanMessage(content=user_query)
-        ])
-    except Exception as exc:
-        print(f"   [GoldLoan] Extraction failed: {exc}")
-        gold_request = GoldLoanRequest()
-
-    quantity_in_grams = convert_gold_quantity_to_grams(
-        gold_request.gold_quantity_grams,
-        gold_request.gold_quantity_tolas,
-        gold_request.gold_quantity_ounces,
-    )
-
-    if quantity_in_grams <= 0:
-        response_content = "To calculate your gold loan, please tell me the quantity of gold you are pledging in grams, tolas, or ounces."
+    if not selected_offer:
+        response_content = (
+            "I cannot process a gold loan for this profile because no gold-loan offer is present in the customer's eligible offers."
+        )
     else:
-        try:
-            price_data = fetch_current_gold_price()
-            price_per_ounce = price_data["price_per_ounce"]
-            currency = price_data["currency"]
-            is_fallback_price = price_data.get("is_fallback", False)
-            price_per_gram = price_per_ounce / 31.1034768
-            total_gold_value = round(quantity_in_grams * price_per_gram, 2)
-            min_disbursement = round(total_gold_value * 0.8, 2)
-            max_disbursement = round(total_gold_value * 1.2, 2)
+        gold_request = _extract_gold_loan_terms_from_query(user_query)
+        previous_context = extracted.get("gold_loan_context", {}) if isinstance(extracted, dict) else {}
 
-            if gold_request.requested_loan_amount is not None:
-                requested_amount = gold_request.requested_loan_amount
-                if requested_amount < min_disbursement or requested_amount > max_disbursement:
-                    amount_message = (
-                        f"Your requested gold loan amount of {requested_amount:.2f} {currency} is outside the current eligible range. "
-                        f"Based on {quantity_in_grams:.2f} grams of gold at current price, the eligible loan range is {min_disbursement:.2f} to {max_disbursement:.2f} {currency}."
-                    )
-                else:
-                    amount_message = (
-                        f"Your requested amount of {requested_amount:.2f} {currency} falls within the eligible gold loan disbursement range of "
-                        f"{min_disbursement:.2f} to {max_disbursement:.2f} {currency}."
-                    )
+        quantity_in_grams = convert_gold_quantity_to_grams(
+            gold_request.get("gold_quantity_grams") or previous_context.get("gold_quantity_grams"),
+            gold_request.get("gold_quantity_tolas") or previous_context.get("gold_quantity_tolas"),
+            gold_request.get("gold_quantity_ounces") or previous_context.get("gold_quantity_ounces"),
+        )
+
+        requested_amount = (
+            gold_request.get("requested_loan_amount")
+            or previous_context.get("requested_loan_amount")
+        )
+        requested_currency = _detect_currency_from_query(
+            user_query,
+            gold_request.get("requested_currency") or previous_context.get("currency") or "INR",
+        )
+        price_data = fetch_current_gold_price(requested_currency)
+        price_per_ounce = price_data["price_per_ounce"]
+        currency = price_data["currency"]
+        price_per_gram = (price_per_ounce / 31.1034768) if price_per_ounce is not None else None
+        is_fallback_price = price_data.get("is_fallback", False)
+
+        response_lines = []
+        offer_content = selected_offer.get("content", "Gold loan offer")
+        offer_rate = selected_offer.get("interest_rate")
+        offer_tenure_months = selected_offer.get("tenure_months")
+        response_lines.append(f"Eligible gold-loan offer: {offer_content}.")
+
+        if quantity_in_grams <= 0 and requested_amount is None and not previous_context:
+            response_content = (
+                "Please share either the gold quantity you want to pledge or the loan amount you need, and I will calculate the eligible range."
+            )
+        elif price_data.get("needs_customer_price"):
+            response_content = (
+                f"I could not fetch a live gold price for {currency}. Please share the current gold price in {currency} so I can calculate the eligible loan range."
+            )
+        else:
+            if quantity_in_grams > 0:
+                total_gold_value = round(quantity_in_grams * price_per_gram, 2)
+                min_disbursement = round(total_gold_value * 0.8, 2)
+                max_disbursement = round(total_gold_value * 1.2, 2)
+                response_lines.append(
+                    f"For {quantity_in_grams:.2f} grams of gold, the eligible loan range is "
+                    f"{_format_currency(min_disbursement, currency)} to {_format_currency(max_disbursement, currency)}."
+                )
             else:
-                amount_message = (
-                    f"Based on {quantity_in_grams:.2f} grams of gold at current price, the eligible gold loan disbursement range is "
-                    f"{min_disbursement:.2f} to {max_disbursement:.2f} {currency}."
+                total_gold_value = None
+                min_disbursement = None
+                max_disbursement = None
+
+            if requested_amount is not None and min_disbursement is not None and max_disbursement is not None:
+                if requested_amount < min_disbursement or requested_amount > max_disbursement:
+                    required_gold_lower = (requested_amount / 1.2) / price_per_gram
+                    required_gold_upper = (requested_amount / 0.8) / price_per_gram
+                    response_content = (
+                        f"Your requested loan of {_format_currency(requested_amount, currency)} is outside the eligible range for "
+                        f"{quantity_in_grams:.2f} grams of gold. The current eligible range is "
+                        f"{_format_currency(min_disbursement, currency)} to {_format_currency(max_disbursement, currency)}. "
+                        f"To support {_format_currency(requested_amount, currency)}, you would need about "
+                        f"{required_gold_lower:.2f} to {required_gold_upper:.2f} grams of gold."
+                    )
+                    updated_context = {
+                        "gold_quantity_grams": quantity_in_grams if quantity_in_grams > 0 else previous_context.get("gold_quantity_grams"),
+                        "gold_quantity_tolas": gold_request.get("gold_quantity_tolas") or previous_context.get("gold_quantity_tolas"),
+                        "gold_quantity_ounces": gold_request.get("gold_quantity_ounces") or previous_context.get("gold_quantity_ounces"),
+                        "requested_loan_amount": requested_amount,
+                        "requested_tenure_months": gold_request.get("requested_tenure_months") or previous_context.get("requested_tenure_months") or [],
+                        "max_acceptable_emi": gold_request.get("max_acceptable_emi") or previous_context.get("max_acceptable_emi"),
+                        "currency": currency,
+                        "price_per_ounce": price_per_ounce,
+                        "price_per_gram": round(price_per_gram, 2) if price_per_gram is not None else None,
+                        "total_gold_value": total_gold_value,
+                        "min_disbursement": min_disbursement,
+                        "max_disbursement": max_disbursement,
+                        "offer_id": selected_offer.get("offer_id"),
+                        "offer_interest_rate": offer_rate,
+                        "offer_tenure_months": offer_tenure_months,
+                    }
+                    tool_call_id = f"call_H_{customer_id}"
+                    ai_msg = AIMessage(
+                        content="Checking gold-loan eligibility and current pricing...",
+                        tool_calls=[{"name": "gold_loan_specialist", "args": {"query": user_query}, "id": tool_call_id}]
+                    )
+                    tool_msg = ToolMessage(content=str(response_content), tool_call_id=tool_call_id, name="gold_loan_specialist")
+
+                    updated_extracted = dict(state.get("extracted_data", {}))
+                    updated_extracted["current_step_index"] = updated_extracted.get("current_step_index", 0) + 1
+                    updated_extracted["gold_loan_specialist"] = response_content
+                    updated_extracted["last_active_specialist"] = "gold_loan_specialist"
+                    updated_extracted["gold_loan_context"] = updated_context
+
+                    return {
+                        "messages": [ai_msg, tool_msg],
+                        "extracted_data": updated_extracted
+                    }
+
+            if requested_amount is not None:
+                lower_gold_value = requested_amount / 1.2
+                upper_gold_value = requested_amount / 0.8
+                lower_grams = lower_gold_value / price_per_gram
+                upper_grams = upper_gold_value / price_per_gram
+                response_lines.append(
+                    f"To support a loan of {_format_currency(requested_amount, currency)}, you need about "
+                    f"{lower_grams:.2f} to {upper_grams:.2f} grams of gold."
                 )
 
-            # Add fallback disclaimer if applicable
-            fallback_note = ""
-            if is_fallback_price:
-                fallback_note = (
-                    "\n\n**Note:** We used a conservative reference price (USD $50/oz) as live market data was unavailable. "
-                    "For the most accurate disbursement range, please provide the current market gold price, "
-                    "and we will recalculate your eligibility."
-                )
+            tenure_months = gold_request.get("requested_tenure_months") or previous_context.get("requested_tenure_months") or []
+            max_acceptable_emi = gold_request.get("max_acceptable_emi") or previous_context.get("max_acceptable_emi")
 
-            payload = {
-                "customer_query": user_query,
-                "gold_quantity_grams": quantity_in_grams,
-                "requested_loan_amount": gold_request.requested_loan_amount,
-                "requested_tenure_months": gold_request.requested_tenure_months,
-                "max_acceptable_emi": gold_request.max_acceptable_emi,
-                "current_price_source": price_data.get("source"),
+            if requested_amount is not None:
+                principal = requested_amount
+            elif total_gold_value is not None:
+                principal = max_disbursement
+            else:
+                principal = None
+
+            if principal is not None:
+                if tenure_months:
+                    selected_tenure = tenure_months[0]
+                    if offer_rate is None:
+                        response_lines.append(
+                            "The eligible gold-loan offer does not include an interest rate in the catalog, so EMI cannot be calculated."
+                        )
+                    else:
+                        metrics = run_reducing_balance_emi(principal, offer_rate, selected_tenure)
+                        response_lines.append(
+                            f"For {selected_tenure} months, the estimated EMI is {_format_currency(metrics['primary_metric'], currency)}."
+                        )
+                        response_lines.append(
+                            f"Total repayment is {_format_currency(metrics['total_repayment'], currency)}."
+                        )
+                        if max_acceptable_emi is not None and metrics["primary_metric"] > max_acceptable_emi:
+                            response_lines.append(
+                                f"This EMI is above your budget of {_format_currency(max_acceptable_emi, currency)}."
+                            )
+                else:
+                    response_lines.append("Please share the tenure in months so I can calculate the EMI.")
+
+            response_content = " ".join(response_lines)
+
+            updated_context = {
+                "gold_quantity_grams": quantity_in_grams if quantity_in_grams > 0 else previous_context.get("gold_quantity_grams"),
+                "gold_quantity_tolas": gold_request.get("gold_quantity_tolas") or previous_context.get("gold_quantity_tolas"),
+                "gold_quantity_ounces": gold_request.get("gold_quantity_ounces") or previous_context.get("gold_quantity_ounces"),
+                "requested_loan_amount": requested_amount,
+                "requested_tenure_months": tenure_months,
+                "max_acceptable_emi": max_acceptable_emi,
+                "currency": currency,
                 "price_per_ounce": price_per_ounce,
-                "price_per_gram": round(price_per_gram, 2),
+                "price_per_gram": round(price_per_gram, 2) if price_per_gram is not None else None,
                 "total_gold_value": total_gold_value,
                 "min_disbursement": min_disbursement,
                 "max_disbursement": max_disbursement,
-                "amount_message": amount_message,
-                "fallback_note": fallback_note,
+                "offer_id": selected_offer.get("offer_id"),
+                "offer_interest_rate": offer_rate,
+                "offer_tenure_months": offer_tenure_months,
             }
-
-            response_content = llm.invoke([
-                SystemMessage(content=GOLD_LOAN_SPECIALIST_PROMPT),
-                HumanMessage(content=json.dumps(payload, default=str))
-            ]).content
-        except Exception as exc:
-            print(f"   [GoldLoan] Unexpected error: {exc}")
-            response_content = (
-                "We encountered an error while calculating your gold loan eligibility. "
-                "Please try again or contact our customer service team for assistance."
-            )
 
     tool_call_id = f"call_H_{customer_id}"
     ai_msg = AIMessage(
-        content=f"Invoking gold_loan_specialist with current gold pricing...",
+        content="Checking gold-loan eligibility and current pricing...",
         tool_calls=[{"name": "gold_loan_specialist", "args": {"query": user_query}, "id": tool_call_id}]
     )
     tool_msg = ToolMessage(content=str(response_content), tool_call_id=tool_call_id, name="gold_loan_specialist")
@@ -287,6 +699,9 @@ Fields:
     updated_extracted = dict(state.get("extracted_data", {}))
     updated_extracted["current_step_index"] = updated_extracted.get("current_step_index", 0) + 1
     updated_extracted["gold_loan_specialist"] = response_content
+    updated_extracted["last_active_specialist"] = "gold_loan_specialist"
+    if updated_context is not None:
+        updated_extracted["gold_loan_context"] = updated_context
 
     return {
         "messages": [ai_msg, tool_msg],
