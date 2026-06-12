@@ -1,7 +1,7 @@
 # Financial Agent LangGraph
 
 This repository implements a banking agent orchestration system for IDFC FIRST Bank.
-The system uses a state graph to route customer queries through specialized agents and compile safe, bank-aligned responses.
+The system uses a LangGraph state machine to route customer queries through specialized agents and produce concise, bank-aligned responses.
 
 ## Key Features
 
@@ -11,8 +11,7 @@ The system uses a state graph to route customer queries through specialized agen
 - Supervisor orchestrator for intent routing, clarification handling, and follow-up context reuse
 - Specialist agents for offers, transactions, loans, and banking metadata
 - Strict prompt rules to avoid inventing offer details, tenures, or reward terms
-- Rolling conversation memory plus longer customer memory in shared state
-- Token usage logging on every LLM call
+- Deterministic routing through the supervisor, specialist nodes, and synthesis step
 - Extensible for future card products, home loan variants, and collateral-based loan types
 
 ## File Overview
@@ -24,8 +23,8 @@ The system uses a state graph to route customer queries through specialized agen
 - `prompts.py` - Prompt templates and behavior rules for all agents
 - `agent_state.py` - Agent state initialization, short-term memory, and conversation memory
 - `data/` - Mock customer and offer datasets
-- `architecture_summary.md` - Detailed architecture overview
-- `architecture_diagram.mmd` - Mermaid architecture diagram
+- `architecture_summary.md` - High-level system architecture
+- `memory.md` - Working notes and state behavior
 - `test_gold_loan.py` - Test harness for gold loan specialist integration
 
 ## Usage
